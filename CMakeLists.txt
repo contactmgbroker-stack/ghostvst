@@ -24,6 +24,8 @@ juce_add_plugin(GhostSurf
     PLUGIN_DESCRIPTION      "Vintage Surf Rock Effects"
 )
 
+juce_generate_juce_header(GhostSurf)
+
 target_sources(GhostSurf PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
