@@ -4,6 +4,14 @@
 const int GhostSurfProcessor::BASE_COMB_LEN[NUM_COMBS] = { 1557, 1617, 1491, 1422 };
 const int GhostSurfProcessor::BASE_AP_LEN[NUM_AP]      = { 556, 441 };
 
+// 8-step gate patterns (1=on, 0=off) — one step = one 1/8 note
+static const float ARP_PATTERNS[4][8] = {
+    { 1.f, 0.f, 1.f, 0.f, 1.f, 0.f, 1.f, 0.f }, // 1/8 Gate
+    { 1.f, 1.f, 0.f, 1.f, 1.f, 0.f, 1.f, 0.f }, // Triolets
+    { 1.f, 0.f, 0.f, 0.f, 1.f, 0.f, 1.f, 0.f }, // A Forest (sparse)
+    { 1.f, 0.f, 1.f, 1.f, 0.f, 1.f, 0.f, 1.f }, // Syncope
+};
+
 //==============================================================================
 juce::AudioProcessorValueTreeState::ParameterLayout GhostSurfProcessor::createParameters()
 {
@@ -47,6 +55,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout GhostSurfProcessor::createPa
     p.push_back(std::make_unique<juce::AudioParameterFloat>("slideSpeed",  "Vitesse Gliss",
         juce::NormalisableRange<float>(0.1f, 10.f, 0.01f), 2.f));
 
+    // Arpeggiator pattern
+    p.push_back(std::make_unique<juce::AudioParameterChoice>("arpPattern", "Pattern Arpege",
+        juce::StringArray{"1/8 Gate","Triolets","A Forest","Syncope"}, 0));
+
     return { p.begin(), p.end() };
 }
 
@@ -78,7 +90,6 @@ void GhostSurfProcessor::prepareToPlay(double sampleRate, int /*samplesPerBlock*
         apL[i].init(len); apR[i].init(len);
     }
 
-    // Slide delay buffer (max 100ms for pitch modulation)
     int slideMax = (int)(sampleRate * 0.1);
     slideDelayL.assign(slideMax, 0.f);
     slideDelayR.assign(slideMax, 0.f);
@@ -129,6 +140,7 @@ void GhostSurfProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     const float swellAmt    = apvts.getRawParameterValue("swellAmount")->load();
     const float slideAmt    = apvts.getRawParameterValue("slideAmount")->load();
     const float slideSpd    = apvts.getRawParameterValue("slideSpeed")->load();
+    const int   arpPat      = (int)apvts.getRawParameterValue("arpPattern")->load();
 
     // Get BPM from host
     if (auto* ph = getPlayHead()) {
@@ -144,9 +156,10 @@ void GhostSurfProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     const float  damp   = std::exp(-2.f * juce::MathConstants<float>::pi * reverbTone / (float)sr);
     const float  combDamp = juce::jlimit(0.05f, 0.99f, 1.f - damp);
 
-    // Drive
+    // Drive — tube saturation blends into fuzz above drive=0.5
     const float driveGain = 1.f + drive * 9.f;
     const float driveNorm = std::tanh(driveGain) + 1e-6f;
+    const float fuzzMix   = juce::jlimit(0.f, 1.f, (drive - 0.5f) * 2.f);
 
     // LoFi
     const float noiseAmt = lofi * 0.012f;
@@ -163,9 +176,9 @@ void GhostSurfProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     // Auto-swell: coeff from attack time
     const float swellCoeff = 1.f - std::exp(-1.f / (swellAtk * (float)sr));
 
-    // Gate rate (arpège) - 1/8 notes synced to BPM
-    float gateRate = currentBPM / 60.f * 2.f;
-    const float gateInc = gateRate / (float)sr;
+    // Gate rate — gatePhase goes 0→8 over 1 bar (8 eighth notes)
+    // Each step in ARP_PATTERNS = 1 eighth note
+    const float gateInc = (currentBPM / 60.f * 2.f) / (float)sr;
 
     // Slide: smooth portamento
     const float slideCoeff = 1.f - std::exp(-slideSpd / (float)sr);
@@ -181,9 +194,13 @@ void GhostSurfProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
 
         // ── SATURATION ──────────────────────────────────────────────────────
         if (drive > 0.001f) {
-            // Asymmetric tube-style (even harmonics)
-            inL = (std::tanh(inL * driveGain * 1.1f) * 0.6f + std::tanh(inL * driveGain * 0.9f) * 0.4f) / driveNorm;
-            inR = (std::tanh(inR * driveGain * 1.1f) * 0.6f + std::tanh(inR * driveGain * 0.9f) * 0.4f) / driveNorm;
+            // Tube saturation (tanh) blends to hard fuzz clipping at high drive
+            float tubL = (std::tanh(inL * driveGain * 1.1f) * 0.6f + std::tanh(inL * driveGain * 0.9f) * 0.4f) / driveNorm;
+            float tubR = (std::tanh(inR * driveGain * 1.1f) * 0.6f + std::tanh(inR * driveGain * 0.9f) * 0.4f) / driveNorm;
+            float fzzL = juce::jlimit(-0.9f, 0.9f, inL * driveGain * 2.f);
+            float fzzR = juce::jlimit(-0.9f, 0.9f, inR * driveGain * 2.f);
+            inL = tubL + fuzzMix * (fzzL - tubL);
+            inR = tubR + fuzzMix * (fzzR - tubR);
         }
 
         // ── LOFI ─────────────────────────────────────────────────────────────
@@ -195,20 +212,19 @@ void GhostSurfProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
             inL = lofiLpL; inR = lofiLpR;
         }
 
-        // ── BOTTLENECK / SLIDE (portamento via pitch mod) ────────────────────
+        // ── BOTTLENECK / SLIDE ───────────────────────────────────────────────
         if (slideAmt > 0.001f) {
             slideDelayL[slideWritePos] = inL;
             slideDelayR[slideWritePos] = inR;
 
-            // Slide: LFO slowly oscillates read position for pitch glide feel
             slideCurrent += (slideTarget - slideCurrent) * slideCoeff;
-            slideTarget = std::sin(slidePhase) * slideAmt * 80.f; // ±80 samples max
+            slideTarget = std::sin(slidePhase) * slideAmt * 80.f;
             slidePhase += 2.f * juce::MathConstants<float>::pi * 0.5f / (float)sr;
             if (slidePhase > juce::MathConstants<float>::twoPi) slidePhase -= juce::MathConstants<float>::twoPi;
 
             float readOffset = slideCurrent;
-            int readPos = (slideWritePos - 40 - (int)readOffset + slideDelaySize) % slideDelaySize;
-            float frac = readOffset - std::floor(readOffset);
+            int readPos  = (slideWritePos - 40 - (int)readOffset + slideDelaySize) % slideDelaySize;
+            float frac   = readOffset - std::floor(readOffset);
             int readPos2 = (readPos + 1) % slideDelaySize;
 
             float slideL = slideDelayL[readPos] * (1.f - frac) + slideDelayL[readPos2] * frac;
@@ -245,7 +261,7 @@ void GhostSurfProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
 
         // ── GUITAR MODES ─────────────────────────────────────────────────────
         if (guitarMode == 1) {
-            // AUTO-SWELL: slow volume attack (violin/organ feel)
+            // AUTO-SWELL: slow volume attack
             float envL = std::abs(bufL[i]);
             float envR = std::abs(bufR[i]);
             swellEnvL += (envL - swellEnvL) * swellCoeff;
@@ -256,11 +272,14 @@ void GhostSurfProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
             bufR[i] *= (1.f - swellAmt) + swellAmt * gainR;
         }
         else if (guitarMode == 2) {
-            // ARPEGE: rhythmic gate synced to BPM
+            // ARPEGE: pattern gate synced to BPM (8 steps = 1 bar)
             gatePhase += gateInc;
-            if (gatePhase >= 1.f) gatePhase -= 1.f;
-            float gateTarget = (gatePhase < 0.45f) ? 1.f : 0.f;
-            gateSmoothed += (gateTarget - gateSmoothed) * 0.1f; // smooth to avoid clicks
+            if (gatePhase >= 8.f) gatePhase -= 8.f;
+            int   step       = juce::jlimit(0, 7, (int)gatePhase);
+            float gateTarget = ARP_PATTERNS[juce::jlimit(0,3,arpPat)][step];
+            // Fast attack, slower release for natural feel
+            float sc = gateTarget > gateSmoothed ? 0.25f : 0.05f;
+            gateSmoothed += (gateTarget - gateSmoothed) * sc;
             bufL[i] *= gateSmoothed;
             bufR[i] *= gateSmoothed;
         }
@@ -298,17 +317,20 @@ struct PresetData {
     const char* name;
     float reverbMix, reverbDecay, reverbTone;
     float tremSpeed, tremDepth;
+    bool  tremSync; int tremDiv;
     float drive, lofi, bass, treble;
     int   guitarMode;
     float swellAtk, swellAmt, slideAmt;
+    int   arpPattern;
 };
 
 static const PresetData PRESETS[5] = {
-    { "Surf Clean",    0.40f, 3.0f, 4200.f, 4.0f, 0.30f, 0.10f, 0.05f,  1.f,  2.f, 0, 0.3f, 0.7f, 0.0f },
-    { "Dirty Cramps",  0.55f, 2.0f, 1800.f, 7.0f, 0.65f, 0.75f, 0.45f, -1.f,  4.f, 0, 0.3f, 0.7f, 0.2f },
-    { "Night Waves",   0.60f, 5.0f, 3500.f, 2.0f, 0.40f, 0.20f, 0.12f,  2.f, -1.f, 1, 0.5f, 0.8f, 0.0f },
-    { "Haunted Motel", 0.72f, 5.5f, 1400.f, 3.2f, 0.72f, 0.55f, 0.52f,  3.f, -2.f, 2, 0.3f, 0.7f, 0.3f },
-    { "Zen Surf",      0.30f, 4.0f, 5000.f, 1.0f, 0.18f, 0.00f, 0.05f,  0.f,  1.f, 1, 0.8f, 0.6f, 0.1f },
+    // name                  rvbMix  rvbDcy  rvbTon  tSpd  tDpt  sync  div   drv   lofi  bass  treb  mode  sAtk  sAmt  slAmt arpPat
+    { "The Cure - A Forest", 0.75f,  5.5f,  2200.f,  3.0f, 0.05f, true,  1,  0.05f, 0.08f,  4.f, -1.f,  2,  0.5f, 0.7f, 0.0f,  2 },
+    { "Lil Peep - Ghost",    0.60f,  4.0f,  3500.f,  2.0f, 0.30f, false, 1,  0.18f, 0.42f,  3.f, -3.f,  1,  0.6f, 0.85f,0.0f,  0 },
+    { "Iggy Pop - Dog",      0.20f,  1.5f,  7000.f,  8.0f, 0.65f, false, 1,  0.95f, 0.18f,  4.f,  6.f,  0,  0.3f, 0.7f, 0.15f, 0 },
+    { "Surf Clean",          0.40f,  3.0f,  4200.f,  4.0f, 0.30f, false, 1,  0.10f, 0.05f,  1.f,  2.f,  0,  0.3f, 0.7f, 0.0f,  0 },
+    { "Night Waves",         0.68f,  5.0f,  3200.f,  2.0f, 0.40f, false, 1,  0.20f, 0.12f,  2.f, -1.f,  1,  0.5f, 0.8f, 0.0f,  0 },
 };
 
 void GhostSurfProcessor::setCurrentProgram(int index)
@@ -317,7 +339,7 @@ void GhostSurfProcessor::setCurrentProgram(int index)
     currentPreset = index;
     const auto& d = PRESETS[index];
     auto set = [&](const char* id, float val) {
-        if (auto* p = apvts.getParameter(id)) p->setValueNotifyingHost(p->convertTo0to1(val));
+        if (auto* param = apvts.getParameter(id)) param->setValueNotifyingHost(param->convertTo0to1(val));
     };
     set("reverbMix", d.reverbMix); set("reverbDecay", d.reverbDecay);
     set("reverbTone", d.reverbTone); set("tremSpeed", d.tremSpeed);
@@ -325,8 +347,14 @@ void GhostSurfProcessor::setCurrentProgram(int index)
     set("lofi", d.lofi); set("bass", d.bass); set("treble", d.treble);
     set("swellAttack", d.swellAtk); set("swellAmount", d.swellAmt);
     set("slideAmount", d.slideAmt);
-    if (auto* p = apvts.getParameter("guitarMode"))
-        p->setValueNotifyingHost(p->convertTo0to1((float)d.guitarMode));
+    if (auto* param = apvts.getParameter("guitarMode"))
+        param->setValueNotifyingHost(param->convertTo0to1((float)d.guitarMode));
+    if (auto* param = apvts.getParameter("tremSync"))
+        param->setValueNotifyingHost(d.tremSync ? 1.f : 0.f);
+    if (auto* param = apvts.getParameter("tremDiv"))
+        param->setValueNotifyingHost(param->convertTo0to1((float)d.tremDiv));
+    if (auto* param = apvts.getParameter("arpPattern"))
+        param->setValueNotifyingHost(param->convertTo0to1((float)d.arpPattern));
 }
 
 const juce::String GhostSurfProcessor::getProgramName(int index)

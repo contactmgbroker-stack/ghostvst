@@ -248,6 +248,15 @@ GhostSurfEditor::GhostSurfEditor(GhostSurfProcessor& p)
     tremDivAttach = std::make_unique<AudioProcessorValueTreeState::ComboBoxAttachment>(
         proc.getAPVTS(), "tremDiv", tremDivBox);
 
+    // Arpeggiator pattern selector
+    arpPatternBox.addItem("1/8 Gate", 1);
+    arpPatternBox.addItem("Triolets", 2);
+    arpPatternBox.addItem("A Forest", 3);
+    arpPatternBox.addItem("Syncope",  4);
+    addAndMakeVisible(arpPatternBox);
+    arpPatternAttach = std::make_unique<AudioProcessorValueTreeState::ComboBoxAttachment>(
+        proc.getAPVTS(), "arpPattern", arpPatternBox);
+
     // Build knobs — REVERB (cyan)
     buildKnob(reverbMix,   "reverbMix",   "MIX",    C::cyan);
     buildKnob(reverbDecay, "reverbDecay", "DECAY",  C::cyan);
@@ -375,20 +384,29 @@ void GhostSurfEditor::resized()
     placeKnob(bass,   565, KY, KS);
     placeKnob(treble, 620, KY, KS);
 
-    // GUITARE section (x=634, w=98) — shows different knobs by mode
-    swellAttack.slider.setVisible(currentMode == 1);
-    swellAttack.label.setVisible(currentMode == 1);
-    swellAmount.slider.setVisible(currentMode == 1);
-    swellAmount.label.setVisible(currentMode == 1);
-    slideAmount.slider.setVisible(currentMode != 1);
-    slideAmount.label.setVisible(currentMode != 1);
-    slideSpeed.slider.setVisible(currentMode != 1);
-    slideSpeed.label.setVisible(currentMode != 1);
+    // GUITARE section (x=634, w=98) — shows different controls by mode
+    bool isSwell  = (currentMode == 1);
+    bool isArpege = (currentMode == 2);
+    bool isNormal = (currentMode == 0);
 
-    placeKnob(swellAttack, 683, 105, KS);
-    placeKnob(swellAmount, 683, 185, KS);
-    placeKnob(slideAmount, 683, 105, KS);
-    placeKnob(slideSpeed,  683, 185, KS);
+    swellAttack.slider.setVisible(isSwell);
+    swellAttack.label.setVisible(isSwell);
+    swellAmount.slider.setVisible(isSwell);
+    swellAmount.label.setVisible(isSwell);
+
+    slideAmount.slider.setVisible(isNormal);
+    slideAmount.label.setVisible(isNormal);
+    slideSpeed.slider.setVisible(isNormal);
+    slideSpeed.label.setVisible(isNormal);
+
+    arpPatternBox.setVisible(isArpege);
+
+    placeKnob(swellAttack, 683, 110, KS);
+    placeKnob(swellAmount, 683, 190, KS);
+    placeKnob(slideAmount, 683, 110, KS);
+    placeKnob(slideSpeed,  683, 190, KS);
+    arpPatternBox.setBounds(638, 100, 88, 22);
+    // Pattern label drawn via paint (section title suffices)
 
     // VU meter
     vuMeter.setBounds(642, 278, 82, 196);

@@ -65,6 +65,7 @@ private:
     juce::ComboBox  presetBox;
     juce::ToggleButton tremSyncBtn;
     juce::ComboBox  tremDivBox;
+    juce::ComboBox  arpPatternBox;
     juce::TextButton modeNormal, modeSwell, modeArpege;
     juce::Label titleLabel;
 
@@ -73,6 +74,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>     tremSyncAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>   tremDivAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>   presetAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>   arpPatternAttach;
 
     int currentMode = 0;
     void setGuitarMode(int mode);
