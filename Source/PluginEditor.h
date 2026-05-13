@@ -102,10 +102,12 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>   presetAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>   arpPatternAttach;
 
-    int currentMode = 0;
+    int  currentMode  = 0;
+    bool arpBoxLive   = false;   // true = arpPatternBox encadrée en rouge live
     void setGuitarMode(int mode);
     void buildKnob(KnobWidget& kw, const char* paramID, const char* label, juce::Colour accent);
     void placeKnob(KnobWidget& kw, int cx, int cy, int size);
+    void updateLiveHighlights(int presetIndex);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(GhostSurfEditor)
 };

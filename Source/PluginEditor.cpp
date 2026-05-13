@@ -71,6 +71,20 @@ void OceanLookAndFeel::drawRotarySlider(Graphics& g, int x, int y, int w, int h,
     if (tag == "cobalt")  accent = C::cobalt;
     if (tag == "seafoam") accent = C::seafoam;
 
+    // ── Live highlight ring (rouge = potard clé pour ce preset) ────────────
+    bool isLive = (int)slider.getProperties()["live"] == 1;
+    if (isLive) {
+        // Outer halo
+        g.setColour(Colour(0xFFFF3300).withAlpha(0.28f));
+        g.drawEllipse(centre.x - r - 6, centre.y - r - 6, (r+6)*2.f, (r+6)*2.f, 5.f);
+        // Sharp red ring
+        g.setColour(Colour(0xFFFF4422).withAlpha(0.90f));
+        g.drawEllipse(centre.x - r - 2.5f, centre.y - r - 2.5f, (r+2.5f)*2.f, (r+2.5f)*2.f, 2.f);
+        // Inner bright flash
+        g.setColour(Colour(0xFFFFAA88).withAlpha(0.55f));
+        g.drawEllipse(centre.x - r - 1, centre.y - r - 1, (r+1)*2.f, (r+1)*2.f, 1.f);
+    }
+
     // Outer ring — dark navy with subtle glow
     g.setColour(Colour(0xFF04101E));
     g.fillEllipse(centre.x - r, centre.y - r, r*2, r*2);
@@ -478,7 +492,11 @@ GhostSurfEditor::GhostSurfEditor(GhostSurfProcessor& p)
     for (int i = 0; i < GhostSurfProcessor::NUM_PRESETS; ++i)
         presetBox.addItem(p.getProgramName(i), i+1);
     presetBox.setSelectedId(p.getCurrentProgram()+1, dontSendNotification);
-    presetBox.onChange = [&] { proc.setCurrentProgram(presetBox.getSelectedId()-1); };
+    presetBox.onChange = [&] {
+        int idx = presetBox.getSelectedId() - 1;
+        proc.setCurrentProgram(idx);
+        updateLiveHighlights(idx);
+    };
     addAndMakeVisible(presetBox);
 
     // Mode buttons
@@ -553,6 +571,9 @@ GhostSurfEditor::GhostSurfEditor(GhostSurfProcessor& p)
     addAndMakeVisible(waveDisplay);
     addAndMakeVisible(arpDisplay);
 
+    // Highlights initiaux selon le preset chargé
+    updateLiveHighlights(p.getCurrentProgram());
+
     startTimerHz(10);
 }
 
@@ -577,6 +598,73 @@ void GhostSurfEditor::setGuitarMode(int mode)
     if (auto* param = proc.getAPVTS().getParameter("guitarMode"))
         param->setValueNotifyingHost(param->convertTo0to1((float)mode));
     resized();
+}
+
+// ── Live highlights ───────────────────────────────────────────────────────────
+void GhostSurfEditor::updateLiveHighlights(int idx)
+{
+    // 3 potards clés par preset — tous différents selon le style du joueur
+    // Colonnes : [param0, param1, param2, arpBox?]
+    struct LiveDef { const char* p0; const char* p1; const char* p2; bool arp; };
+    static const LiveDef L[12] = {
+        // 0  The Cure - A Forest   : la reverb EST le son, joue dessus live
+        { "reverbMix",   "reverbDecay", "reverbTone",  true  },
+        // 1  Lil Peep - Ghost      : texture lo-fi + vitesse du swell
+        { "lofi",        "swellAttack", "reverbMix",   false },
+        // 2  Iggy Pop - Dog        : fuzz + tremolo = tout le show
+        { "drive",       "tremSpeed",   "tremDepth",   false },
+        // 3  Surf Clean            : tremolo surf classique à doser
+        { "tremSpeed",   "tremDepth",   "reverbTone",  false },
+        // 4  Night Waves           : swell lent + queue reverb = ambient
+        { "swellAttack", "reverbDecay", "swellAmount", false },
+        // 5  Dick Dale - Misirlou  : vitesse tremolo = urgence surf
+        { "tremSpeed",   "tremDepth",   "drive",       false },
+        // 6  The Pixies - Monkey   : quantité swell + espace reverb
+        { "swellAmount", "swellAttack", "reverbDecay", false },
+        // 7  Joy Division - Trans. : reverb glaciale, pas trop de mix
+        { "reverbDecay", "reverbTone",  "reverbMix",   true  },
+        // 8  Jack White - Slide    : slide + fuzz + graves = blues
+        { "slideAmount", "drive",       "bass",        false },
+        // 9  Haunted Motel         : queue fantôme + tremolo hanté
+        { "reverbDecay", "tremDepth",   "tremSpeed",   true  },
+        // 10 Jimi Hendrix - Purple : fuzz + whammy + aigus brûlants
+        { "drive",       "slideAmount", "treble",      false },
+        // 11 Nile Rodgers - Le Freak : EQ funk + propreté absolue
+        { "treble",      "bass",        "lofi",        true  },
+    };
+
+    // Map param ID → slider
+    struct KM { const char* id; juce::Slider* s; };
+    KM km[] = {
+        {"reverbMix",   &reverbMix.slider},
+        {"reverbDecay", &reverbDecay.slider},
+        {"reverbTone",  &reverbTone.slider},
+        {"tremSpeed",   &tremSpeed.slider},
+        {"tremDepth",   &tremDepth.slider},
+        {"drive",       &drive.slider},
+        {"lofi",        &lofi.slider},
+        {"bass",        &bass.slider},
+        {"treble",      &treble.slider},
+        {"swellAttack", &swellAttack.slider},
+        {"swellAmount", &swellAmount.slider},
+        {"slideAmount", &slideAmount.slider},
+        {"slideSpeed",  &slideSpeed.slider},
+    };
+
+    // Clear all
+    for (auto& k : km) { k.s->getProperties().set("live", 0); k.s->repaint(); }
+    arpBoxLive = false;
+
+    if (idx < 0 || idx >= 12) return;
+    const LiveDef& d = L[idx];
+    const char* toLight[] = { d.p0, d.p1, d.p2 };
+    for (const char* pid : toLight)
+        for (auto& k : km)
+            if (std::strcmp(k.id, pid) == 0)
+                { k.s->getProperties().set("live", 1); k.s->repaint(); }
+
+    arpBoxLive = d.arp;
+    repaint();  // redraw pour le cadre arpPatternBox
 }
 
 // ── Paint ─────────────────────────────────────────────────────────────────────
@@ -677,6 +765,22 @@ void GhostSurfEditor::paint(Graphics& g)
     drawHemiPanel({402, 65, 234, 428}, "EFFETS",        C::cobalt);
     drawHemiPanel({643, 65, 110, 206}, "GUITARE",       C::seafoam);
     drawHemiPanel({643, 277, 110, 216}, "NIVEAU",       C::cyan.withAlpha(0.7f));
+
+    // ── Cadre rouge sur arpPatternBox si c'est un potard live ────────────────
+    if (arpBoxLive && arpPatternBox.isVisible()) {
+        auto ab = arpPatternBox.getBounds().toFloat();
+        g.setColour(Colour(0xFFFF3300).withAlpha(0.30f));
+        g.drawRoundedRectangle(ab.expanded(5.f), 7.f, 5.f);
+        g.setColour(Colour(0xFFFF4422).withAlpha(0.90f));
+        g.drawRoundedRectangle(ab.expanded(2.5f), 6.f, 1.8f);
+    }
+
+    // ── Légende discrète ────────────────────────────────────────────────────
+    g.setColour(Colour(0xFFFF4422).withAlpha(0.65f));
+    g.fillEllipse(getWidth() - 100.f, 22.f, 8.f, 8.f);
+    g.setColour(C::dimWhite);
+    g.setFont(Font("Arial", 8.f, Font::plain));
+    g.drawText("potards live", getWidth() - 90, 19, 86, 14, Justification::centredLeft);
 }
 
 // ── Resized ───────────────────────────────────────────────────────────────────
