@@ -3,10 +3,10 @@
 #include "PluginProcessor.h"
 
 //==============================================================================
-class ModernLookAndFeel : public juce::LookAndFeel_V4
+class OceanLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
-    ModernLookAndFeel();
+    OceanLookAndFeel();
     void drawRotarySlider(juce::Graphics&, int x, int y, int w, int h,
                           float sliderPos, float startAngle, float endAngle,
                           juce::Slider&) override;
@@ -16,6 +16,32 @@ public:
                               const juce::Colour& bg, bool highlighted, bool down) override;
     juce::Font getLabelFont(juce::Label&) override;
     void drawLabel(juce::Graphics&, juce::Label&) override;
+};
+
+//==============================================================================
+// Waveform oscilloscope display
+class WaveformDisplay : public juce::Component, private juce::Timer
+{
+public:
+    explicit WaveformDisplay(GhostSurfProcessor& p);
+    void paint(juce::Graphics&) override;
+private:
+    void timerCallback() override { repaint(); }
+    GhostSurfProcessor& proc;
+};
+
+//==============================================================================
+// Arpeggiator step display (8 lit boxes)
+class ArpStepDisplay : public juce::Component, private juce::Timer
+{
+public:
+    explicit ArpStepDisplay(GhostSurfProcessor& p);
+    void paint(juce::Graphics&) override;
+    void setPattern(int patternIndex);
+private:
+    void timerCallback() override { repaint(); }
+    GhostSurfProcessor& proc;
+    int pattern = 0;
 };
 
 //==============================================================================
@@ -50,9 +76,7 @@ public:
 private:
     void timerCallback() override;
     GhostSurfProcessor& proc;
-    ModernLookAndFeel lf;
-
-    juce::Image bgPhoto;
+    OceanLookAndFeel lf;
 
     // Knobs
     KnobWidget reverbMix, reverbDecay, reverbTone;
@@ -69,7 +93,9 @@ private:
     juce::TextButton modeNormal, modeSwell, modeArpege;
     juce::Label titleLabel;
 
-    VUMeter vuMeter;
+    VUMeter        vuMeter;
+    WaveformDisplay waveDisplay;
+    ArpStepDisplay  arpDisplay;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>     tremSyncAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>   tremDivAttach;

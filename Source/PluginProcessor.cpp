@@ -4,12 +4,16 @@
 const int GhostSurfProcessor::BASE_COMB_LEN[NUM_COMBS] = { 1557, 1617, 1491, 1422 };
 const int GhostSurfProcessor::BASE_AP_LEN[NUM_AP]      = { 556, 441 };
 
-// 8-step gate patterns (1=on, 0=off) — one step = one 1/8 note
-static const float ARP_PATTERNS[4][8] = {
-    { 1.f, 0.f, 1.f, 0.f, 1.f, 0.f, 1.f, 0.f }, // 1/8 Gate
-    { 1.f, 1.f, 0.f, 1.f, 1.f, 0.f, 1.f, 0.f }, // Triolets
-    { 1.f, 0.f, 0.f, 0.f, 1.f, 0.f, 1.f, 0.f }, // A Forest (sparse)
-    { 1.f, 0.f, 1.f, 1.f, 0.f, 1.f, 0.f, 1.f }, // Syncope
+// 8-step gate patterns (1=on, 0=off, 0.5=half) — one step = one 1/8 note
+static const float ARP_PATTERNS[8][8] = {
+    { 1.f, 0.f, 1.f, 0.f, 1.f, 0.f, 1.f, 0.f }, // 1/8 Gate    (standard eighth)
+    { 1.f, 1.f, 0.f, 1.f, 1.f, 0.f, 1.f, 0.f }, // Triolets    (triplet feel)
+    { 1.f, 0.f, 0.f, 0.f, 1.f, 0.f, 1.f, 0.f }, // A Forest    (The Cure sparse)
+    { 1.f, 0.f, 1.f, 1.f, 0.f, 1.f, 0.f, 1.f }, // Syncope     (syncopated)
+    { 1.f, 1.f, 0.5f,1.f, 1.f, 0.5f,0.f, 0.f }, // Gallop      (country/surf gallop)
+    { 0.f, 1.f, 0.f, 1.f, 0.f, 1.f, 0.f, 1.f }, // Off-Beat    (ska upstroke)
+    { 1.f, 0.5f,0.f, 1.f, 0.5f,0.f, 1.f, 0.f }, // Surf Beat   (classic surf gate)
+    { 1.f, 0.f, 0.5f,0.f, 1.f, 0.f, 0.5f,0.f }, // Waltz       (3/4 feel)
 };
 
 //==============================================================================
@@ -36,7 +40,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout GhostSurfProcessor::createPa
     p.push_back(std::make_unique<juce::AudioParameterFloat>("drive", "Saturation", 0.f, 1.f, 0.2f));
 
     // LoFi
-    p.push_back(std::make_unique<juce::AudioParameterFloat>("lofi", "Lo-Fi", 0.f, 1.f, 0.1f));
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("lofi", "Lo-Fi", 0.f, 1.f, 0.05f));
 
     // EQ
     p.push_back(std::make_unique<juce::AudioParameterFloat>("bass",   "Basses",   -12.f, 12.f, 0.f));
@@ -55,9 +59,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout GhostSurfProcessor::createPa
     p.push_back(std::make_unique<juce::AudioParameterFloat>("slideSpeed",  "Vitesse Gliss",
         juce::NormalisableRange<float>(0.1f, 10.f, 0.01f), 2.f));
 
-    // Arpeggiator pattern
+    // Arpeggiator pattern — 8 patterns
     p.push_back(std::make_unique<juce::AudioParameterChoice>("arpPattern", "Pattern Arpege",
-        juce::StringArray{"1/8 Gate","Triolets","A Forest","Syncope"}, 0));
+        juce::StringArray{"1/8 Gate","Triolets","A Forest","Syncope",
+                          "Gallop","Off-Beat","Surf Beat","Waltz"}, 0));
 
     return { p.begin(), p.end() };
 }
@@ -67,7 +72,9 @@ GhostSurfProcessor::GhostSurfProcessor()
           .withInput ("Input",  juce::AudioChannelSet::stereo(), true)
           .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       apvts(*this, nullptr, "PARAMETERS", createParameters())
-{}
+{
+    std::fill(scopeData, scopeData + SCOPE_SIZE, 0.f);
+}
 
 //==============================================================================
 float GhostSurfProcessor::reverbFeedback(float decaySec, int delaySamples, double sampleRate)
@@ -100,8 +107,11 @@ void GhostSurfProcessor::prepareToPlay(double sampleRate, int /*samplesPerBlock*
     tremoloPhase = gatePhase = 0.f;
     swellEnvL = swellEnvR = 0.f;
     lofiLpL = lofiLpR = 0.f;
+    noiseGateEnv = 0.f;
     dcXL = dcYL = dcXR = dcYR = 0.f;
     outputLevel.store(0.f);
+    std::fill(scopeData, scopeData + SCOPE_SIZE, 0.f);
+    scopeWritePos.store(0);
     updateEQ();
 }
 
@@ -161,9 +171,13 @@ void GhostSurfProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     const float driveNorm = std::tanh(driveGain) + 1e-6f;
     const float fuzzMix   = juce::jlimit(0.f, 1.f, (drive - 0.5f) * 2.f);
 
-    // LoFi
-    const float noiseAmt = lofi * 0.012f;
-    const float tapeLpA  = std::exp(-2.f * juce::MathConstants<float>::pi * (14000.f - lofi*8000.f) / (float)sr);
+    // LoFi — noise amount (will be gated by input signal)
+    const float noiseAmt  = lofi * 0.015f;
+    // Tape LP cutoff: 14kHz at lofi=0, 5kHz at lofi=1
+    const float tapeLpA   = std::exp(-2.f * juce::MathConstants<float>::pi * (14000.f - lofi * 9000.f) / (float)sr);
+    // Noise gate envelope: fast attack, slow release
+    const float ngAttack  = 1.f - std::exp(-1.f / (0.005f * (float)sr)); // 5ms attack
+    const float ngRelease = 1.f - std::exp(-1.f / (0.200f * (float)sr)); // 200ms release
 
     // Tremolo rate
     float tremRate = tremSpeed;
@@ -177,7 +191,6 @@ void GhostSurfProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     const float swellCoeff = 1.f - std::exp(-1.f / (swellAtk * (float)sr));
 
     // Gate rate — gatePhase goes 0→8 over 1 bar (8 eighth notes)
-    // Each step in ARP_PATTERNS = 1 eighth note
     const float gateInc = (currentBPM / 60.f * 2.f) / (float)sr;
 
     // Slide: smooth portamento
@@ -187,6 +200,7 @@ void GhostSurfProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     updateEQ();
 
     float peakLevel = 0.f;
+    int scopeWP = scopeWritePos.load(std::memory_order_relaxed);
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -194,22 +208,12 @@ void GhostSurfProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
 
         // ── SATURATION ──────────────────────────────────────────────────────
         if (drive > 0.001f) {
-            // Tube saturation (tanh) blends to hard fuzz clipping at high drive
             float tubL = (std::tanh(inL * driveGain * 1.1f) * 0.6f + std::tanh(inL * driveGain * 0.9f) * 0.4f) / driveNorm;
             float tubR = (std::tanh(inR * driveGain * 1.1f) * 0.6f + std::tanh(inR * driveGain * 0.9f) * 0.4f) / driveNorm;
             float fzzL = juce::jlimit(-0.9f, 0.9f, inL * driveGain * 2.f);
             float fzzR = juce::jlimit(-0.9f, 0.9f, inR * driveGain * 2.f);
             inL = tubL + fuzzMix * (fzzL - tubL);
             inR = tubR + fuzzMix * (fzzR - tubR);
-        }
-
-        // ── LOFI ─────────────────────────────────────────────────────────────
-        if (lofi > 0.001f) {
-            inL += (rng.nextFloat() * 2.f - 1.f) * noiseAmt;
-            inR += (rng.nextFloat() * 2.f - 1.f) * noiseAmt;
-            lofiLpL = lofiLpL * tapeLpA + inL * (1.f - tapeLpA);
-            lofiLpR = lofiLpR * tapeLpA + inR * (1.f - tapeLpA);
-            inL = lofiLpL; inR = lofiLpR;
         }
 
         // ── BOTTLENECK / SLIDE ───────────────────────────────────────────────
@@ -275,9 +279,10 @@ void GhostSurfProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
             // ARPEGE: pattern gate synced to BPM (8 steps = 1 bar)
             gatePhase += gateInc;
             if (gatePhase >= 8.f) gatePhase -= 8.f;
-            int   step       = juce::jlimit(0, 7, (int)gatePhase);
-            float gateTarget = ARP_PATTERNS[juce::jlimit(0,3,arpPat)][step];
-            // Fast attack, slower release for natural feel
+            int step = juce::jlimit(0, 7, (int)gatePhase);
+            currentArpStep.store(step, std::memory_order_relaxed);
+            float gateTarget = ARP_PATTERNS[juce::jlimit(0, 7, arpPat)][step];
+            // Asymmetric smoothing: fast attack (0.25), slower release (0.05)
             float sc = gateTarget > gateSmoothed ? 0.25f : 0.05f;
             gateSmoothed += (gateTarget - gateSmoothed) * sc;
             bufL[i] *= gateSmoothed;
@@ -293,6 +298,23 @@ void GhostSurfProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
                 tremoloPhase -= juce::MathConstants<float>::twoPi;
         }
 
+        // ── LOFI TAPE (POST-REVERB) ──────────────────────────────────────────
+        // Noise is added AFTER reverb so the reverb tail doesn't amplify it.
+        // Gated by input signal level so there's NO hiss on silence.
+        if (lofi > 0.001f) {
+            // Envelope follower on post-reverb signal
+            float absOut = std::max(std::abs(bufL[i]), std::abs(bufR[i]));
+            float coeff  = absOut > noiseGateEnv ? ngAttack : ngRelease;
+            noiseGateEnv += (absOut - noiseGateEnv) * coeff;
+            float noiseMult = juce::jlimit(0.f, 1.f, noiseGateEnv * 30.f);
+
+            // Tape bandwidth LP
+            lofiLpL = lofiLpL * tapeLpA + bufL[i] * (1.f - tapeLpA);
+            lofiLpR = lofiLpR * tapeLpA + bufR[i] * (1.f - tapeLpA);
+            bufL[i] = lofiLpL + (rng.nextFloat() * 2.f - 1.f) * noiseAmt * noiseMult;
+            bufR[i] = lofiLpR + (rng.nextFloat() * 2.f - 1.f) * noiseAmt * noiseMult;
+        }
+
         // ── DC BLOCKER ───────────────────────────────────────────────────────
         float dcL = bufL[i] - dcXL + 0.995f * dcYL;
         dcXL = bufL[i]; dcYL = dcL; bufL[i] = dcL;
@@ -303,9 +325,16 @@ void GhostSurfProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
         bufL[i] = std::tanh(bufL[i]);
         bufR[i] = std::tanh(bufR[i]);
 
+        // ── LEVEL METER ──────────────────────────────────────────────────────
         float lvl = std::max(std::abs(bufL[i]), std::abs(bufR[i]));
         if (lvl > peakLevel) peakLevel = lvl;
+
+        // ── SCOPE RING BUFFER ─────────────────────────────────────────────────
+        scopeData[scopeWP] = (bufL[i] + bufR[i]) * 0.5f;
+        scopeWP = (scopeWP + 1) % SCOPE_SIZE;
     }
+
+    scopeWritePos.store(scopeWP, std::memory_order_relaxed);
 
     float cur = outputLevel.load();
     outputLevel.store(peakLevel > cur ? peakLevel :
@@ -324,18 +353,23 @@ struct PresetData {
     int   arpPattern;
 };
 
-static const PresetData PRESETS[5] = {
-    // name                  rvbMix  rvbDcy  rvbTon  tSpd  tDpt  sync  div   drv   lofi  bass  treb  mode  sAtk  sAmt  slAmt arpPat
-    { "The Cure - A Forest", 0.75f,  5.5f,  2200.f,  3.0f, 0.05f, true,  1,  0.05f, 0.08f,  4.f, -1.f,  2,  0.5f, 0.7f, 0.0f,  2 },
-    { "Lil Peep - Ghost",    0.60f,  4.0f,  3500.f,  2.0f, 0.30f, false, 1,  0.18f, 0.42f,  3.f, -3.f,  1,  0.6f, 0.85f,0.0f,  0 },
-    { "Iggy Pop - Dog",      0.20f,  1.5f,  7000.f,  8.0f, 0.65f, false, 1,  0.95f, 0.18f,  4.f,  6.f,  0,  0.3f, 0.7f, 0.15f, 0 },
-    { "Surf Clean",          0.40f,  3.0f,  4200.f,  4.0f, 0.30f, false, 1,  0.10f, 0.05f,  1.f,  2.f,  0,  0.3f, 0.7f, 0.0f,  0 },
-    { "Night Waves",         0.68f,  5.0f,  3200.f,  2.0f, 0.40f, false, 1,  0.20f, 0.12f,  2.f, -1.f,  1,  0.5f, 0.8f, 0.0f,  0 },
+static const PresetData PRESETS[GhostSurfProcessor::NUM_PRESETS] = {
+//  name                        rvbMx  rvbDcy  rvbTon  tSpd   tDpt   sync   div   drv    lofi   bass   treb  mode  sAtk  sAmt  slAmt  arpPat
+    { "The Cure - A Forest",    0.75f,  5.5f,  2200.f,  3.0f, 0.05f, true,   1,  0.05f, 0.06f,  4.f,  -1.f,  2, 0.5f, 0.70f, 0.00f,  2 },
+    { "Lil Peep - Ghost",       0.60f,  4.0f,  3500.f,  2.0f, 0.30f, false,  1,  0.18f, 0.35f,  3.f,  -3.f,  1, 0.6f, 0.85f, 0.00f,  0 },
+    { "Iggy Pop - Dog",         0.20f,  1.5f,  7000.f,  8.0f, 0.65f, false,  1,  0.95f, 0.15f,  4.f,   6.f,  0, 0.3f, 0.70f, 0.15f,  0 },
+    { "Surf Clean",             0.40f,  3.0f,  4200.f,  4.0f, 0.30f, false,  1,  0.10f, 0.04f,  1.f,   2.f,  0, 0.3f, 0.70f, 0.00f,  0 },
+    { "Night Waves",            0.68f,  5.0f,  3200.f,  2.0f, 0.40f, false,  1,  0.20f, 0.10f,  2.f,  -1.f,  1, 0.5f, 0.80f, 0.00f,  0 },
+    { "Dick Dale - Misirlou",   0.35f,  2.0f,  5500.f, 14.0f, 0.85f, true,   1,  0.08f, 0.04f,  2.f,   4.f,  0, 0.3f, 0.70f, 0.00f,  6 },
+    { "The Pixies - Monkey",    0.55f,  4.5f,  3800.f,  1.5f, 0.15f, false,  1,  0.12f, 0.05f,  0.f,  -2.f,  1, 0.8f, 0.90f, 0.00f,  0 },
+    { "Joy Division - Trans.",  0.80f,  5.8f,  1800.f,  0.5f, 0.10f, false,  1,  0.08f, 0.12f, -2.f,  -4.f,  2, 0.4f, 0.70f, 0.00f,  3 },
+    { "Jack White - Slide",     0.25f,  2.5f,  6000.f,  3.0f, 0.20f, false,  1,  0.70f, 0.08f,  5.f,   3.f,  0, 0.3f, 0.70f, 0.40f,  0 },
+    { "Haunted Motel",          0.65f,  4.5f,  2800.f,  5.0f, 0.45f, false,  1,  0.15f, 0.15f,  0.f,   1.f,  2, 0.4f, 0.75f, 0.00f,  0 },
 };
 
 void GhostSurfProcessor::setCurrentProgram(int index)
 {
-    if (index < 0 || index >= 5) return;
+    if (index < 0 || index >= NUM_PRESETS) return;
     currentPreset = index;
     const auto& d = PRESETS[index];
     auto set = [&](const char* id, float val) {
@@ -359,7 +393,7 @@ void GhostSurfProcessor::setCurrentProgram(int index)
 
 const juce::String GhostSurfProcessor::getProgramName(int index)
 {
-    if (index >= 0 && index < 5) return PRESETS[index].name;
+    if (index >= 0 && index < NUM_PRESETS) return PRESETS[index].name;
     return {};
 }
 

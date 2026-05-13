@@ -1,6 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include <atomic>
+#include <array>
 #include <vector>
 #include <cmath>
 
@@ -39,6 +40,9 @@ struct AllpassFilter {
 class GhostSurfProcessor : public juce::AudioProcessor
 {
 public:
+    static constexpr int NUM_PRESETS = 10;
+    static constexpr int SCOPE_SIZE  = 1024;
+
     GhostSurfProcessor();
     ~GhostSurfProcessor() override = default;
 
@@ -60,7 +64,7 @@ public:
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 5.0; }
 
-    int getNumPrograms() override { return 5; }
+    int getNumPrograms() override { return NUM_PRESETS; }
     int getCurrentProgram() override { return currentPreset; }
     void setCurrentProgram(int index) override;
     const juce::String getProgramName(int index) override;
@@ -71,6 +75,13 @@ public:
 
     juce::AudioProcessorValueTreeState& getAPVTS() { return apvts; }
     float getOutputLevel() const { return outputLevel.load(); }
+
+    // Scope buffer (lock-free ring buffer for waveform display)
+    const float* getScopePtr()      const { return scopeData; }
+    int          getScopeWritePos() const { return scopeWritePos.load(std::memory_order_relaxed); }
+
+    // Current arpeggiator step (for step display)
+    int getCurrentArpStep() const { return currentArpStep.load(std::memory_order_relaxed); }
 
 private:
     juce::AudioProcessorValueTreeState apvts;
@@ -93,7 +104,7 @@ private:
     // Auto-Swell
     float swellEnvL = 0.0f, swellEnvR = 0.0f;
 
-    // Bottleneck / Slide (portamento pitch shift via short delay modulation)
+    // Bottleneck / Slide
     float slidePhase    = 0.0f;
     float slideTarget   = 0.0f;
     float slideCurrent  = 0.0f;
@@ -103,10 +114,12 @@ private:
     // Rhythmic Gate (arpège)
     float gatePhase    = 0.0f;
     float gateSmoothed = 1.0f;
+    std::atomic<int> currentArpStep { 0 };
 
     // LoFi
     juce::Random rng;
     float lofiLpL = 0.0f, lofiLpR = 0.0f;
+    float noiseGateEnv = 0.0f;   // envelope follower to gate noise
 
     // DC blocker
     float dcXL = 0.0f, dcYL = 0.0f;
@@ -119,6 +132,10 @@ private:
 
     double sr = 44100.0;
     std::atomic<float> outputLevel { 0.0f };
+
+    // Scope ring buffer
+    float scopeData[SCOPE_SIZE] {};
+    std::atomic<int> scopeWritePos { 0 };
 
     void updateEQ();
 
