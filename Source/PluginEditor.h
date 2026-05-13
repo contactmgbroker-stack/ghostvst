@@ -19,7 +19,7 @@ public:
 };
 
 //==============================================================================
-// Waveform oscilloscope display
+// Oscilloscope avec cadre en forme de vague
 class WaveformDisplay : public juce::Component, private juce::Timer
 {
 public:
@@ -31,17 +31,25 @@ private:
 };
 
 //==============================================================================
-// Arpeggiator step display (8 lit boxes)
-class ArpStepDisplay : public juce::Component, private juce::Timer
+// Séquenceur d'arpège interactif : 8 steps cliquables/draggables
+class ArpEditor : public juce::Component, private juce::Timer
 {
 public:
-    explicit ArpStepDisplay(GhostSurfProcessor& p);
+    explicit ArpEditor(GhostSurfProcessor& p);
     void paint(juce::Graphics&) override;
-    void setPattern(int patternIndex);
+    void mouseDown(const juce::MouseEvent&) override;
+    void mouseDrag(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
+    void mouseDoubleClick(const juce::MouseEvent&) override;
+
 private:
     void timerCallback() override { repaint(); }
     GhostSurfProcessor& proc;
-    int pattern = 0;
+    int   getStepAt(float x) const;
+    float getValForY(float y) const;
+    int   dragStep    = -1;
+    float dragStartY  = 0.f;
+    float dragStartVal= 0.f;
 };
 
 //==============================================================================
@@ -86,27 +94,29 @@ private:
     KnobWidget slideAmount, slideSpeed;
 
     // Controls
-    juce::ComboBox  presetBox;
+    juce::ComboBox   presetBox;
     juce::ToggleButton tremSyncBtn;
-    juce::ComboBox  tremDivBox;
-    juce::ComboBox  arpPatternBox;
+    juce::ComboBox   tremDivBox;
+    juce::ComboBox   arpPatternBox;   // charge un pattern dans les 8 steps
     juce::TextButton modeNormal, modeSwell, modeArpege;
-    juce::Label titleLabel;
+    juce::Label      titleLabel;
 
     VUMeter        vuMeter;
     WaveformDisplay waveDisplay;
-    ArpStepDisplay  arpDisplay;
+    ArpEditor       arpEditor;    // séquenceur interactif (panel bas)
 
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>     tremSyncAttach;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>   tremDivAttach;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>   presetAttach;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>   arpPatternAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>   tremSyncAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tremDivAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> presetAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> arpPatternAttach;
 
-    int  currentMode  = 0;
-    bool arpBoxLive   = false;   // true = arpPatternBox encadrée en rouge live
+    int  currentMode = 0;
+    bool arpBoxLive  = false;
+
     void setGuitarMode(int mode);
     void buildKnob(KnobWidget& kw, const char* paramID, const char* label, juce::Colour accent);
     void placeKnob(KnobWidget& kw, int cx, int cy, int size);
+    // rank: 1=rouge, 2=orange, 3=jaune, 0=off
     void updateLiveHighlights(int presetIndex);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(GhostSurfEditor)

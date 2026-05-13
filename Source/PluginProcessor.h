@@ -42,6 +42,7 @@ class GhostSurfProcessor : public juce::AudioProcessor
 public:
     static constexpr int NUM_PRESETS = 12;
     static constexpr int SCOPE_SIZE  = 1024;
+    static constexpr int ARP_STEPS   = 8;
 
     GhostSurfProcessor();
     ~GhostSurfProcessor() override = default;
@@ -76,12 +77,15 @@ public:
     juce::AudioProcessorValueTreeState& getAPVTS() { return apvts; }
     float getOutputLevel() const { return outputLevel.load(); }
 
-    // Scope buffer (lock-free ring buffer for waveform display)
+    // Scope buffer
     const float* getScopePtr()      const { return scopeData; }
     int          getScopeWritePos() const { return scopeWritePos.load(std::memory_order_relaxed); }
 
-    // Current arpeggiator step (for step display)
-    int getCurrentArpStep() const { return currentArpStep.load(std::memory_order_relaxed); }
+    // Arpeggiator — step sequencer individuel
+    int   getCurrentArpStep()            const { return currentArpStep.load(std::memory_order_relaxed); }
+    float getArpStepValue(int s)         const { return arpStepParams[juce::jlimit(0,7,s)]->load(); }
+    void  setArpStepValue(int s, float v);
+    void  loadArpPattern(int patternIndex);   // charge un pattern preset dans arp0-arp7
 
 private:
     juce::AudioProcessorValueTreeState apvts;
@@ -105,21 +109,24 @@ private:
     float swellEnvL = 0.0f, swellEnvR = 0.0f;
 
     // Bottleneck / Slide
-    float slidePhase    = 0.0f;
-    float slideTarget   = 0.0f;
-    float slideCurrent  = 0.0f;
+    float slidePhase   = 0.0f;
+    float slideTarget  = 0.0f;
+    float slideCurrent = 0.0f;
     std::vector<float> slideDelayL, slideDelayR;
     int   slideWritePos = 0;
 
-    // Rhythmic Gate (arpège)
+    // Rhythmic Gate
     float gatePhase    = 0.0f;
     float gateSmoothed = 1.0f;
     std::atomic<int> currentArpStep { 0 };
 
+    // Arp step parameter pointers (cached for audio thread)
+    std::atomic<float>* arpStepParams[ARP_STEPS] {};
+
     // LoFi
     juce::Random rng;
     float lofiLpL = 0.0f, lofiLpR = 0.0f;
-    float noiseGateEnv = 0.0f;   // envelope follower to gate noise
+    float noiseGateEnv = 0.0f;
 
     // DC blocker
     float dcXL = 0.0f, dcYL = 0.0f;
@@ -133,7 +140,7 @@ private:
     double sr = 44100.0;
     std::atomic<float> outputLevel { 0.0f };
 
-    // Scope ring buffer
+    // Scope
     float scopeData[SCOPE_SIZE] {};
     std::atomic<int> scopeWritePos { 0 };
 
