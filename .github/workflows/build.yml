@@ -3,11 +3,11 @@ name: Build GhostSurf VST3
 on:
   push:
     branches: [ main, master ]
-  workflow_dispatch:  # bouton manuel sur GitHub
+  workflow_dispatch:
 
 jobs:
   build-windows:
-    runs-on: windows-latest
+    runs-on: windows-2022  # VS 2022 pre-installe
 
     steps:
     - name: Checkout code
