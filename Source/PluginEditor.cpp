@@ -191,63 +191,144 @@ WaveformDisplay::WaveformDisplay(GhostSurfProcessor& p) : proc(p)
 
 void WaveformDisplay::paint(Graphics& g)
 {
-    auto b = getLocalBounds().toFloat();
-    const float cornerR = 6.f;
+    auto b   = getLocalBounds().toFloat();
+    const float BW = b.getWidth(), BH = b.getHeight();
+    const float x0 = b.getX(),    y0  = b.getY();
 
-    // Background gradient (deep ocean)
-    ColourGradient bg(Colour(0xFF030A14), b.getX(), b.getY(),
-                      Colour(0xFF050C18), b.getX(), b.getBottom(), false);
-    g.setGradientFill(bg);
-    g.fillRoundedRectangle(b, cornerR);
+    // ── Wave frame geometry ─────────────────────────────────────────────────
+    // Top edge is shaped like an ocean wave (2 crests + secondary ripple)
+    const float waveAmp    = 18.f;
+    const float waveOffset = waveAmp + 10.f;   // vertical space for the wave crest
+    const int   numPts     = 240;
 
-    // Grid lines
-    g.setColour(Colour(0x1200AACC));
-    for (int gi = 1; gi < 4; ++gi) {
-        float gy = b.getY() + b.getHeight() * gi / 4.f;
-        g.drawHorizontalLine((int)gy, b.getX() + 4, b.getRight() - 4);
-    }
-    for (int gi = 1; gi < 6; ++gi) {
-        float gx = b.getX() + b.getWidth() * gi / 6.f;
-        g.drawVerticalLine((int)gx, b.getY() + 4, b.getBottom() - 4);
-    }
+    // Compute wavy-top Y at normalised position t∈[0,1]
+    auto topWaveY = [&](float t) -> float {
+        return y0 + waveOffset
+             - std::sin(t * MathConstants<float>::pi * 4.8f) * waveAmp * 0.90f
+             - std::sin(t * MathConstants<float>::pi * 2.1f) * waveAmp * 0.45f
+             - std::sin(t * MathConstants<float>::pi * 9.0f) * waveAmp * 0.12f; // fine ripple
+    };
 
-    // Center line (ocean horizon)
-    g.setColour(Colour(0x3500CCFF));
-    float cy = b.getCentreY();
-    g.drawHorizontalLine((int)cy, b.getX() + 4, b.getRight() - 4);
+    // ── Build filled wave-shaped path ───────────────────────────────────────
+    Path waveShape;
+    waveShape.startNewSubPath(x0, y0 + BH);
+    waveShape.lineTo(x0 + BW, y0 + BH);
+    waveShape.lineTo(x0 + BW, topWaveY(1.f));
+    for (int i = numPts; i >= 0; --i)
+        waveShape.lineTo(x0 + (float)i / numPts * BW, topWaveY((float)i / numPts));
+    waveShape.closeSubPath();
 
-    // Draw waveform
-    const float* data = proc.getScopePtr();
-    int wp = proc.getScopeWritePos();
-    const int N = GhostSurfProcessor::SCOPE_SIZE;
-    const int W = (int)b.getWidth() - 4;
-
-    Path wavePath;
-    bool started = false;
-    for (int xi = 0; xi < W; ++xi) {
-        int idx = (wp + (int)(xi * N / W)) % N;
-        float sample = data[idx];
-        float px = b.getX() + 2 + xi;
-        float py = cy - jlimit(-1.f, 1.f, sample) * (b.getHeight() * 0.42f);
-        if (!started) { wavePath.startNewSubPath(px, py); started = true; }
-        else wavePath.lineTo(px, py);
+    // ── Background fill (deep ocean gradient) ───────────────────────────────
+    {
+        ColourGradient bg(Colour(0xFF020A16), x0, y0 + waveOffset,
+                          Colour(0xFF050E1E), x0, y0 + BH, false);
+        g.setGradientFill(bg);
+        g.fillPath(waveShape);
     }
 
-    // Glow layer (thick, transparent)
-    g.setColour(Colour(0xFF00CCFF).withAlpha(0.20f));
-    g.strokePath(wavePath, PathStrokeType(4.0f, PathStrokeType::curved));
+    // ── Interior (clipped to wave shape) ───────────────────────────────────
+    {
+        Graphics::ScopedSaveState ss(g);
+        g.reduceClipRegion(waveShape);
 
-    // Mid layer
-    g.setColour(Colour(0xFF00CCFF).withAlpha(0.50f));
-    g.strokePath(wavePath, PathStrokeType(2.0f, PathStrokeType::curved));
+        float innerTop = y0 + waveOffset;
+        float innerH   = BH - waveOffset;
+        float cy       = innerTop + innerH * 0.5f;
 
-    // Sharp bright line on top
-    g.setColour(Colour(0xFF00EEFF).withAlpha(0.90f));
-    g.strokePath(wavePath, PathStrokeType(1.0f, PathStrokeType::curved));
+        // Grid
+        g.setColour(Colour(0x0D00AACC));
+        for (int gi = 1; gi < 5; ++gi) {
+            float gy = innerTop + innerH * gi / 5.f;
+            g.drawHorizontalLine((int)gy, x0 + 6, x0 + BW - 6);
+        }
+        for (int gi = 1; gi < 5; ++gi) {
+            float gx = x0 + BW * gi / 5.f;
+            g.drawVerticalLine((int)gx, (int)innerTop + 4, (int)(y0 + BH) - 4);
+        }
 
-    // Border
-    g.setColour(Colour(0xFF00CCFF).withAlpha(0.35f));
-    g.drawRoundedRectangle(b.reduced(0.5f), cornerR, 1.f);
+        // Centre (horizon line)
+        g.setColour(Colour(0x2800CCFF));
+        g.drawHorizontalLine((int)cy, x0 + 6, x0 + BW - 6);
+
+        // ── Oscilloscope waveform ───────────────────────────────────────────
+        const float* data = proc.getScopePtr();
+        int wp = proc.getScopeWritePos();
+        const int N  = GhostSurfProcessor::SCOPE_SIZE;
+        const int PW = (int)BW - 8;
+
+        Path oscPath;
+        bool started = false;
+        for (int xi = 0; xi < PW; ++xi) {
+            int   idx    = (wp + (int)((float)xi * N / PW)) % N;
+            float sample = jlimit(-1.f, 1.f, data[idx]);
+            float px     = x0 + 4.f + xi;
+            float py     = cy - sample * innerH * 0.44f;
+            if (!started) { oscPath.startNewSubPath(px, py); started = true; }
+            else oscPath.lineTo(px, py);
+        }
+
+        // Outer glow
+        g.setColour(Colour(0xFF00CCFF).withAlpha(0.12f));
+        g.strokePath(oscPath, PathStrokeType(7.f, PathStrokeType::curved));
+        // Mid glow
+        g.setColour(Colour(0xFF00CCFF).withAlpha(0.38f));
+        g.strokePath(oscPath, PathStrokeType(3.f, PathStrokeType::curved));
+        // Sharp bright line
+        g.setColour(Colour(0xFF00EEFF).withAlpha(0.88f));
+        g.strokePath(oscPath, PathStrokeType(1.2f, PathStrokeType::curved));
+    }
+
+    // ── Wave border — "la jolie vague" ──────────────────────────────────────
+    // Reconstruct just the top wave path for stroking
+    Path waveCrest;
+    for (int i = 0; i <= numPts; ++i) {
+        float t  = (float)i / numPts;
+        float wx = x0 + t * BW;
+        float wy = topWaveY(t);
+        if (i == 0) waveCrest.startNewSubPath(wx, wy);
+        else waveCrest.lineTo(wx, wy);
+    }
+
+    // Wide outer halo
+    g.setColour(C::cyan.withAlpha(0.15f));
+    g.strokePath(waveCrest, PathStrokeType(10.f, PathStrokeType::curved));
+    // Mid glow
+    g.setColour(C::cyan.withAlpha(0.40f));
+    g.strokePath(waveCrest, PathStrokeType(4.f, PathStrokeType::curved));
+    // Bright crest line
+    g.setColour(Colour(0xFFCCF5FF).withAlpha(0.85f));
+    g.strokePath(waveCrest, PathStrokeType(1.3f, PathStrokeType::curved));
+
+    // Foam dots at wave crests (deterministic — find local Y minima)
+    {
+        float prevDy = topWaveY(1.f / numPts) - topWaveY(0.f);
+        for (int i = 2; i < numPts - 1; i += 2) {
+            float t    = (float)i / numPts;
+            float tN   = (float)(i + 1) / numPts;
+            float dy   = topWaveY(tN) - topWaveY(t);
+            // Crest = transition from descending to ascending (local minimum Y)
+            if (prevDy <= 0.f && dy > 0.f) {
+                float cx  = x0 + t * BW;
+                float top = topWaveY(t);
+                // Draw cluster of foam bubbles around each crest
+                for (int d = -3; d <= 3; ++d) {
+                    float fr  = jmax(0.5f, 3.5f - std::abs(d) * 0.7f);
+                    float fx  = cx + d * 5.5f;
+                    float fy  = top - fr - std::abs(d) * 1.2f;
+                    float fa  = jmax(0.f, 0.80f - std::abs(d) * 0.12f);
+                    g.setColour(Colour(0xFFDDF8FF).withAlpha(fa));
+                    g.fillEllipse(fx - fr, fy - fr, fr * 2.f, fr * 2.f);
+                }
+            }
+            prevDy = dy;
+        }
+    }
+
+    // Side and bottom borders (same cyan glow, thinner)
+    g.setColour(C::cyan.withAlpha(0.30f));
+    g.drawLine(x0,        topWaveY(0.f), x0,        y0 + BH, 1.5f);
+    g.drawLine(x0 + BW,   topWaveY(1.f), x0 + BW,   y0 + BH, 1.5f);
+    g.drawLine(x0,        y0 + BH,       x0 + BW,   y0 + BH, 1.5f);
 }
 
 // ── ArpStepDisplay ────────────────────────────────────────────────────────────
