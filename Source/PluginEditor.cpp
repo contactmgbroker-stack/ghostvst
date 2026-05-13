@@ -1,363 +1,395 @@
 #include "PluginEditor.h"
+#include <BinaryData.h>
 
 using namespace juce;
 
-//=============================================================================
-// Color palette
+// ── Couleurs ──────────────────────────────────────────────────────────────────
 namespace C {
-    const Colour bg         { 0xFF0E0600 };
-    const Colour panelDark  { 0xFF180900 };
-    const Colour panelMid   { 0xFF221200 };
-    const Colour border     { 0xFF5A3010 };
-    const Colour gold       { 0xFFE8C060 };
-    const Colour goldDim    { 0xFF9A7830 };
-    const Colour cream      { 0xFFF0E0B0 };
-    const Colour creamDark  { 0xFFB89860 };
-    const Colour chrome     { 0xFFCCCCCC };
-    const Colour chromeDark { 0xFF888888 };
-    const Colour labelText  { 0xFFC8A060 };
-    const Colour amber      { 0xFFFF9020 };
-    const Colour vuGreen    { 0xFF40DD20 };
-    const Colour vuAmber    { 0xFFFFAA20 };
-    const Colour vuRed      { 0xFFFF3030 };
+    const Colour bg       { 0xFF0A0A0F };
+    const Colour panel    { 0xCC0D0D18 };
+    const Colour border   { 0x55FFFFFF };
+    const Colour cyan     { 0xFF00CCFF };
+    const Colour amber    { 0xFFFF8820 };
+    const Colour purple   { 0xFFBB44FF };
+    const Colour green    { 0xFF44FF88 };
+    const Colour white    { 0xFFEEEEEE };
+    const Colour dimWhite { 0xFF888899 };
+    const Colour btnActive{ 0xFF00CCFF };
+    const Colour btnOff   { 0xFF1A1A2E };
 }
 
-//=============================================================================
-// RetroLookAndFeel
-//=============================================================================
-RetroLookAndFeel::RetroLookAndFeel()
+// ── ModernLookAndFeel ─────────────────────────────────────────────────────────
+ModernLookAndFeel::ModernLookAndFeel()
 {
-    setColour(ComboBox::backgroundColourId,    C::panelDark);
-    setColour(ComboBox::textColourId,          C::gold);
-    setColour(ComboBox::arrowColourId,         C::gold);
-    setColour(ComboBox::outlineColourId,       C::border);
-    setColour(PopupMenu::backgroundColourId,   C::panelMid);
-    setColour(PopupMenu::textColourId,         C::cream);
-    setColour(PopupMenu::highlightedBackgroundColourId, C::border);
-    setColour(Label::textColourId,             C::labelText);
+    setColour(ComboBox::backgroundColourId,  C::panel);
+    setColour(ComboBox::textColourId,        C::white);
+    setColour(ComboBox::arrowColourId,       C::cyan);
+    setColour(ComboBox::outlineColourId,     C::border);
+    setColour(PopupMenu::backgroundColourId, Colour(0xFF0D0D18));
+    setColour(PopupMenu::textColourId,       C::white);
+    setColour(PopupMenu::highlightedBackgroundColourId, C::cyan.withAlpha(0.3f));
+    setColour(Label::textColourId,           C::dimWhite);
+    setColour(ToggleButton::textColourId,    C::white);
+    setColour(ToggleButton::tickColourId,    C::cyan);
 }
 
-void RetroLookAndFeel::drawRotarySlider(Graphics& g, int x, int y, int w, int h,
-                                         float sliderPos, float startAngle, float endAngle,
-                                         Slider& /*slider*/)
+void ModernLookAndFeel::drawRotarySlider(Graphics& g, int x, int y, int w, int h,
+                                          float sliderPos, float startAngle, float endAngle,
+                                          Slider& slider)
 {
     auto bounds = Rectangle<float>((float)x, (float)y, (float)w, (float)h);
     auto centre = bounds.getCentre();
-    float r = jmin(bounds.getWidth(), bounds.getHeight()) * 0.44f;
+    float r = jmin(bounds.getWidth(), bounds.getHeight()) * 0.42f;
 
-    // Drop shadow
-    g.setColour(Colour(0x60000000));
-    g.fillEllipse(centre.x - r + 1.5f, centre.y - r + 2.5f, r * 2.f, r * 2.f);
+    // Accent color from tag
+    Colour accent = C::cyan;
+    auto tag = slider.getComponentID();
+    if (tag == "amber")  accent = C::amber;
+    if (tag == "purple") accent = C::purple;
+    if (tag == "green")  accent = C::green;
 
-    // Chrome outer ring
-    ColourGradient rimGrad(C::chrome, centre.x - r * 0.7f, centre.y - r * 0.7f,
-                           C::chromeDark, centre.x + r * 0.7f, centre.y + r * 0.7f, true);
-    g.setGradientFill(rimGrad);
-    g.fillEllipse(centre.x - r, centre.y - r, r * 2.f, r * 2.f);
+    // Outer ring (dark)
+    g.setColour(Colour(0xFF1A1A2E));
+    g.fillEllipse(centre.x - r, centre.y - r, r*2, r*2);
 
-    // Cream knob body
-    float ir = r * 0.84f;
-    ColourGradient bodyGrad(Colour(0xFFEED9A0), centre.x - ir * 0.35f, centre.y - ir * 0.35f,
-                             Colour(0xFFB89050), centre.x + ir * 0.35f, centre.y + ir * 0.35f, true);
-    g.setGradientFill(bodyGrad);
-    g.fillEllipse(centre.x - ir, centre.y - ir, ir * 2.f, ir * 2.f);
+    // Arc background
+    Path arcBg;
+    arcBg.addArc(centre.x - r + 3, centre.y - r + 3, (r-3)*2, (r-3)*2,
+                 startAngle, endAngle, true);
+    g.setColour(Colour(0xFF252540));
+    g.strokePath(arcBg, PathStrokeType(3.f));
 
-    // Knurling lines (vintage look)
-    g.setColour(Colour(0x18000000));
-    for (int k = 0; k < 16; ++k) {
-        float a = (float)k / 16.f * MathConstants<float>::twoPi;
-        float x0 = centre.x + std::cos(a) * ir * 0.58f;
-        float y0 = centre.y + std::sin(a) * ir * 0.58f;
-        float x1 = centre.x + std::cos(a) * ir * 0.96f;
-        float y1 = centre.y + std::sin(a) * ir * 0.96f;
-        g.drawLine(x0, y0, x1, y1, 0.6f);
-    }
-
-    // Indicator line (dark, crisp)
+    // Arc value
     float angle = startAngle + sliderPos * (endAngle - startAngle);
-    auto lineA = centre.getPointOnCircumference(ir * 0.18f, angle);
-    auto lineB = centre.getPointOnCircumference(ir * 0.86f, angle);
-    g.setColour(Colour(0xFF1A0800));
-    g.drawLine(lineA.x, lineA.y, lineB.x, lineB.y, 2.5f);
+    Path arcVal;
+    arcVal.addArc(centre.x - r + 3, centre.y - r + 3, (r-3)*2, (r-3)*2,
+                  startAngle, angle, true);
+    g.setColour(accent);
+    g.strokePath(arcVal, PathStrokeType(3.f, PathStrokeType::curved, PathStrokeType::rounded));
 
-    // Center dot
-    g.setColour(Colour(0xFF301800));
-    g.fillEllipse(centre.x - 2.8f, centre.y - 2.8f, 5.6f, 5.6f);
+    // Glow on arc end
+    g.setColour(accent.withAlpha(0.5f));
+    auto arcEnd = centre.getPointOnCircumference(r - 3, angle);
+    g.fillEllipse(arcEnd.x - 4, arcEnd.y - 4, 8, 8);
 
-    // Tick marks
-    float tickR = r + 3.5f;
-    g.setColour(C::goldDim.withAlpha(0.7f));
-    for (int k = 0; k <= 10; ++k) {
-        float t = (float)k / 10.f;
-        float a = startAngle + t * (endAngle - startAngle);
-        float len = (k % 5 == 0) ? 4.5f : 2.5f;
-        float cx = centre.x, cy = centre.y;
-        float ca = std::cos(a), sa = std::sin(a);
-        g.drawLine(cx + ca * tickR, cy + sa * tickR,
-                   cx + ca * (tickR + len), cy + sa * (tickR + len), 1.0f);
-    }
+    // Inner knob
+    float ir = r * 0.72f;
+    ColourGradient kg(Colour(0xFF252540), centre.x, centre.y - ir,
+                      Colour(0xFF0D0D18), centre.x, centre.y + ir, false);
+    g.setGradientFill(kg);
+    g.fillEllipse(centre.x - ir, centre.y - ir, ir*2, ir*2);
 
-    // Active arc
-    Path arc;
-    arc.addArc(centre.x - r - 5.f, centre.y - r - 5.f,
-               (r + 5.f) * 2.f, (r + 5.f) * 2.f,
-               startAngle, angle, true);
-    g.setColour(C::amber.withAlpha(0.6f));
-    g.strokePath(arc, PathStrokeType(1.8f));
+    // Indicator dot
+    auto dot = centre.getPointOnCircumference(ir * 0.72f, angle);
+    g.setColour(accent);
+    g.fillEllipse(dot.x - 3, dot.y - 3, 6, 6);
+
+    // Value text
+    g.setColour(C::white.withAlpha(0.9f));
+    g.setFont(Font("Arial", 8.f, Font::plain));
+    String valStr;
+    double val = slider.getValue();
+    if (val == (int)val) valStr = String((int)val);
+    else valStr = String(val, 1);
+    g.drawText(valStr, (int)(centre.x - 20), (int)(centre.y + ir + 2), 40, 12, Justification::centred);
 }
 
-void RetroLookAndFeel::drawComboBox(Graphics& g, int w, int h, bool /*isDown*/,
-                                     int bx, int by, int bw, int bh,
-                                     ComboBox& box)
+void ModernLookAndFeel::drawComboBox(Graphics& g, int w, int h, bool /*isDown*/,
+                                      int bx, int by, int bw, int bh, ComboBox&)
 {
-    g.setColour(C::panelDark);
+    g.setColour(C::panel);
     g.fillRoundedRectangle(0.f, 0.f, (float)w, (float)h, 4.f);
     g.setColour(C::border);
-    g.drawRoundedRectangle(0.5f, 0.5f, w - 1.f, h - 1.f, 4.f, 1.f);
+    g.drawRoundedRectangle(0.5f, 0.5f, w-1.f, h-1.f, 4.f, 1.f);
 
-    // Arrow
-    auto arrow = Rectangle<int>(bx, by, bw, bh).toFloat();
-    Path arrowPath;
-    arrowPath.startNewSubPath(arrow.getX() + 4, arrow.getCentreY() - 2);
-    arrowPath.lineTo(arrow.getCentreX(), arrow.getCentreY() + 3);
-    arrowPath.lineTo(arrow.getRight() - 4, arrow.getCentreY() - 2);
-    g.setColour(C::gold);
-    g.strokePath(arrowPath, PathStrokeType(1.5f));
+    Path arrow;
+    auto a = Rectangle<int>(bx, by, bw, bh).toFloat();
+    arrow.startNewSubPath(a.getX()+4, a.getCentreY()-2);
+    arrow.lineTo(a.getCentreX(), a.getCentreY()+3);
+    arrow.lineTo(a.getRight()-4, a.getCentreY()-2);
+    g.setColour(C::cyan);
+    g.strokePath(arrow, PathStrokeType(1.5f));
 }
 
-void RetroLookAndFeel::drawPopupMenuBackground(Graphics& g, int w, int h)
+void ModernLookAndFeel::drawButtonBackground(Graphics& g, Button& btn,
+                                              const Colour& /*bg*/, bool highlighted, bool down)
 {
-    g.setColour(C::panelMid);
-    g.fillRoundedRectangle(0.f, 0.f, (float)w, (float)h, 4.f);
-    g.setColour(C::border);
-    g.drawRoundedRectangle(0.5f, 0.5f, w - 1.f, h - 1.f, 4.f, 1.f);
+    bool active = btn.getToggleState();
+    Colour fill = active ? C::cyan.withAlpha(0.25f) : C::btnOff;
+    Colour bord = active ? C::cyan : C::border;
+
+    g.setColour(fill);
+    g.fillRoundedRectangle(btn.getLocalBounds().toFloat(), 6.f);
+    g.setColour(highlighted ? bord.brighter(0.3f) : bord);
+    g.drawRoundedRectangle(btn.getLocalBounds().toFloat().reduced(0.5f), 6.f, 1.5f);
 }
 
-void RetroLookAndFeel::drawLabel(Graphics& g, Label& label)
+Font ModernLookAndFeel::getLabelFont(Label&) { return Font("Arial", 10.f, Font::bold); }
+
+void ModernLookAndFeel::drawLabel(Graphics& g, Label& label)
 {
-    g.setColour(C::labelText);
+    g.setColour(label.findColour(Label::textColourId));
     g.setFont(getLabelFont(label));
     g.drawText(label.getText(), label.getLocalBounds(), Justification::centred, false);
 }
 
-//=============================================================================
-// VU Meter
-//=============================================================================
+// ── VU Meter ──────────────────────────────────────────────────────────────────
 VUMeter::VUMeter(GhostSurfProcessor& p) : proc(p) { startTimerHz(30); }
 
-void VUMeter::timerCallback()
-{
-    float target = proc.getOutputLevel();
-    displayLevel += (target - displayLevel) * 0.25f;
-    repaint();
-}
+void VUMeter::timerCallback() { displayLevel += (proc.getOutputLevel() - displayLevel) * 0.25f; repaint(); }
 
 void VUMeter::paint(Graphics& g)
 {
     auto b = getLocalBounds().toFloat();
-
-    // Background
-    g.setColour(Colour(0xFF060300));
-    g.fillRoundedRectangle(b, 3.f);
+    g.setColour(Colour(0xFF060610));
+    g.fillRoundedRectangle(b, 4.f);
     g.setColour(C::border);
-    g.drawRoundedRectangle(b.reduced(0.5f), 3.f, 1.f);
+    g.drawRoundedRectangle(b.reduced(0.5f), 4.f, 1.f);
 
-    const int SEGS = 24;
-    const float segH = (b.getHeight() - 6.f) / SEGS;
-    const float segW = b.getWidth() - 6.f;
-
+    const int SEGS = 20;
+    float segH = (b.getHeight() - 8.f) / SEGS;
     float dbVal = Decibels::gainToDecibels(displayLevel, -60.f);
-    float norm  = jmap(dbVal, -48.f, 0.f, 0.f, 1.f);
-    int   litN  = jlimit(0, SEGS, (int)(norm * SEGS));
+    int litN = jlimit(0, SEGS, (int)(jmap(dbVal, -48.f, 0.f, 0.f, 1.f) * SEGS));
 
     for (int i = 0; i < SEGS; ++i) {
-        float segY = b.getBottom() - 3.f - (i + 1) * segH;
-        auto  seg  = Rectangle<float>(b.getX() + 3.f, segY, segW, segH - 1.f);
-
+        float segY = b.getBottom() - 4.f - (i+1)*segH;
+        auto seg = Rectangle<float>(b.getX()+4, segY, b.getWidth()-8, segH-1.f);
         if (i < litN) {
-            if      (i >= SEGS - 3) g.setColour(C::vuRed);
-            else if (i >= SEGS - 7) g.setColour(C::vuAmber);
-            else                    g.setColour(C::vuGreen);
+            if      (i >= SEGS-2) g.setColour(Colour(0xFFFF3030));
+            else if (i >= SEGS-5) g.setColour(Colour(0xFFFFAA20));
+            else                  g.setColour(C::green);
         } else {
-            g.setColour(Colour(0xFF0D0600));
+            g.setColour(Colour(0xFF111120));
         }
-        g.fillRect(seg);
-
-        // Dark separator
-        g.setColour(Colour(0x50000000));
-        g.drawRect(seg, 0.4f);
+        g.fillRoundedRectangle(seg, 1.f);
     }
-
-    // Label
-    g.setColour(C::goldDim);
-    g.setFont(Font("Arial", 8.f, Font::bold));
-    g.drawText("OUT", b.removeFromBottom(14.f), Justification::centred, false);
+    g.setColour(C::dimWhite);
+    g.setFont(8.f);
+    g.drawText("dB", b.removeFromBottom(12.f), Justification::centred);
 }
 
-//=============================================================================
-// Helper — draw a section panel with title
-//=============================================================================
-void GhostSurfEditor::paintSection(Graphics& g, Rectangle<int> r, const char* title)
-{
-    auto rf = r.toFloat();
-    g.setColour(C::panelDark);
-    g.fillRoundedRectangle(rf, 5.f);
-    g.setColour(C::border);
-    g.drawRoundedRectangle(rf.reduced(0.5f), 5.f, 1.f);
-
-    g.setColour(C::gold);
-    g.setFont(Font("Arial", 9.f, Font::bold));
-    g.drawText(title, r.withHeight(20), Justification::centredTop, false);
-}
-
-//=============================================================================
-// KnobWidget setup
-//=============================================================================
-void GhostSurfEditor::buildKnob(KnobWidget& kw, const char* paramID, const char* labelText)
+// ── Editor ────────────────────────────────────────────────────────────────────
+void GhostSurfEditor::buildKnob(KnobWidget& kw, const char* paramID,
+                                  const char* labelText, Colour accent)
 {
     kw.slider.setSliderStyle(Slider::RotaryVerticalDrag);
     kw.slider.setTextBoxStyle(Slider::NoTextBox, false, 0, 0);
-    kw.slider.setLookAndFeel(&retroLF);
-    kw.slider.setPopupDisplayEnabled(true, false, this); // tooltip value on hover
+    kw.slider.setLookAndFeel(&lf);
+    // Store accent color as component ID tag
+    if      (accent == C::amber)  kw.slider.setComponentID("amber");
+    else if (accent == C::purple) kw.slider.setComponentID("purple");
+    else if (accent == C::green)  kw.slider.setComponentID("green");
+    else                          kw.slider.setComponentID("cyan");
     addAndMakeVisible(kw.slider);
 
     kw.label.setText(labelText, dontSendNotification);
-    kw.label.setJustificationType(Justification::centred);
     kw.label.setFont(Font("Arial", 9.f, Font::bold));
-    kw.label.setColour(Label::textColourId, C::labelText);
+    kw.label.setColour(Label::textColourId, accent);
+    kw.label.setJustificationType(Justification::centred);
     addAndMakeVisible(kw.label);
 
     kw.attach = std::make_unique<AudioProcessorValueTreeState::SliderAttachment>(
         proc.getAPVTS(), paramID, kw.slider);
 }
 
-// Place a knob centred at (cx, knobY)
-void GhostSurfEditor::placeKnob(KnobWidget& kw, int cx, int knobY, int kSize)
+void GhostSurfEditor::placeKnob(KnobWidget& kw, int cx, int cy, int size)
 {
-    kw.slider.setBounds(cx - kSize / 2, knobY, kSize, kSize);
-    kw.label.setBounds(cx - 30, knobY + kSize + 1, 60, 14);
+    kw.slider.setBounds(cx - size/2, cy - size/2, size, size);
+    kw.label.setBounds(cx - 28, cy + size/2 + 2, 56, 13);
 }
 
-//=============================================================================
-// Editor
-//=============================================================================
 GhostSurfEditor::GhostSurfEditor(GhostSurfProcessor& p)
     : AudioProcessorEditor(&p), proc(p), vuMeter(p)
 {
-    setSize(700, 420);
-    setLookAndFeel(&retroLF);
+    setSize(740, 500);
+    setLookAndFeel(&lf);
+
+    // Load background photo from binary data
+    bgPhoto = ImageCache::getFromMemory(BinaryData::cigare_png, BinaryData::cigare_pngSize);
 
     // Title
     titleLabel.setText("GHOST SURF", dontSendNotification);
-    titleLabel.setFont(Font("Arial", 26.f, Font::bold));
-    titleLabel.setColour(Label::textColourId, C::gold);
-    titleLabel.setJustificationType(Justification::centredLeft);
+    titleLabel.setFont(Font("Arial", 22.f, Font::bold));
+    titleLabel.setColour(Label::textColourId, C::cyan);
     addAndMakeVisible(titleLabel);
 
-    // Subtitle
-    subtitleLabel.setText("VINTAGE SURF & GARAGE FX", dontSendNotification);
-    subtitleLabel.setFont(Font("Arial", 9.f, Font::italic));
-    subtitleLabel.setColour(Label::textColourId, C::goldDim);
-    subtitleLabel.setJustificationType(Justification::centredLeft);
-    addAndMakeVisible(subtitleLabel);
-
-    // Preset combo
-    for (int i = 0; i < 5; ++i)
-        presetBox.addItem(p.getProgramName(i), i + 1);
-    presetBox.setSelectedId(p.getCurrentProgram() + 1, dontSendNotification);
-    presetBox.onChange = [&] {
-        proc.setCurrentProgram(presetBox.getSelectedId() - 1);
-    };
+    // Preset
+    for (int i = 0; i < 5; ++i) presetBox.addItem(p.getProgramName(i), i+1);
+    presetBox.setSelectedId(p.getCurrentProgram()+1, dontSendNotification);
+    presetBox.onChange = [&] { proc.setCurrentProgram(presetBox.getSelectedId()-1); };
     addAndMakeVisible(presetBox);
 
-    // Build knobs
-    buildKnob(reverbMix,   "reverbMix",   "MIX");
-    buildKnob(reverbDecay, "reverbDecay", "DECAY");
-    buildKnob(reverbTone,  "reverbTone",  "TONE");
-    buildKnob(tremSpeed,   "tremSpeed",   "SPEED");
-    buildKnob(tremDepth,   "tremDepth",   "DEPTH");
-    buildKnob(drive,       "drive",       "DRIVE");
-    buildKnob(lofi,        "lofi",        "LOFI");
-    buildKnob(bass,        "bass",        "BASS");
-    buildKnob(treble,      "treble",      "TREBLE");
+    // Mode buttons
+    auto setupModeBtn = [&](TextButton& btn, const String& text) {
+        btn.setButtonText(text);
+        btn.setClickingTogglesState(true);
+        btn.setRadioGroupId(1);
+        btn.setLookAndFeel(&lf);
+        addAndMakeVisible(btn);
+    };
+    setupModeBtn(modeNormal,  "NORMAL");
+    setupModeBtn(modeSwell,   "AUTO-SWELL");
+    setupModeBtn(modeArpege,  "ARPEGE");
+    modeNormal.setToggleState(true, dontSendNotification);
+
+    modeNormal.onClick  = [&] { setGuitarMode(0); };
+    modeSwell.onClick   = [&] { setGuitarMode(1); };
+    modeArpege.onClick  = [&] { setGuitarMode(2); };
+
+    // Tremolo sync
+    tremSyncBtn.setButtonText("SYNC BPM");
+    tremSyncBtn.setLookAndFeel(&lf);
+    addAndMakeVisible(tremSyncBtn);
+    tremSyncAttach = std::make_unique<AudioProcessorValueTreeState::ButtonAttachment>(
+        proc.getAPVTS(), "tremSync", tremSyncBtn);
+
+    tremDivBox.addItem("1/4", 1); tremDivBox.addItem("1/8", 2); tremDivBox.addItem("1/16", 3);
+    addAndMakeVisible(tremDivBox);
+    tremDivAttach = std::make_unique<AudioProcessorValueTreeState::ComboBoxAttachment>(
+        proc.getAPVTS(), "tremDiv", tremDivBox);
+
+    // Build knobs — REVERB (cyan)
+    buildKnob(reverbMix,   "reverbMix",   "MIX",    C::cyan);
+    buildKnob(reverbDecay, "reverbDecay", "DECAY",  C::cyan);
+    buildKnob(reverbTone,  "reverbTone",  "TONE",   C::cyan);
+
+    // TREMOLO (amber)
+    buildKnob(tremSpeed, "tremSpeed", "VITESSE",  C::amber);
+    buildKnob(tremDepth, "tremDepth", "INTENSITE",C::amber);
+
+    // EFFETS (purple)
+    buildKnob(drive, "drive", "SATURATION", C::purple);
+    buildKnob(lofi,  "lofi",  "LO-FI",     C::purple);
+    buildKnob(bass,  "bass",  "BASSES",    C::purple);
+    buildKnob(treble,"treble","AIGUS",     C::purple);
+
+    // GUITAR (green)
+    buildKnob(swellAttack, "swellAttack", "ATTAQUE",  C::green);
+    buildKnob(swellAmount, "swellAmount", "INTENSITE",C::green);
+    buildKnob(slideAmount, "slideAmount", "GLISS",    C::green);
+    buildKnob(slideSpeed,  "slideSpeed",  "VITESSE",  C::green);
 
     addAndMakeVisible(vuMeter);
+    startTimerHz(10);
 }
 
-GhostSurfEditor::~GhostSurfEditor()
+GhostSurfEditor::~GhostSurfEditor() { setLookAndFeel(nullptr); }
+
+void GhostSurfEditor::timerCallback()
 {
-    setLookAndFeel(nullptr);
+    // Sync mode buttons to processor state
+    int mode = (int)proc.getAPVTS().getRawParameterValue("guitarMode")->load();
+    if (mode != currentMode) {
+        currentMode = mode;
+        modeNormal.setToggleState(mode==0, dontSendNotification);
+        modeSwell.setToggleState (mode==1, dontSendNotification);
+        modeArpege.setToggleState(mode==2, dontSendNotification);
+        resized();
+    }
 }
 
-//=============================================================================
+void GhostSurfEditor::setGuitarMode(int mode)
+{
+    currentMode = mode;
+    if (auto* p = proc.getAPVTS().getParameter("guitarMode"))
+        p->setValueNotifyingHost(p->convertTo0to1((float)mode));
+    resized();
+}
+
+// ── Paint ─────────────────────────────────────────────────────────────────────
 void GhostSurfEditor::paint(Graphics& g)
 {
-    // Dark background with subtle grain texture
-    ColourGradient bgGrad(Colour(0xFF120800), 0.f, 0.f,
-                           Colour(0xFF080300), (float)getWidth(), (float)getHeight(), false);
-    g.setGradientFill(bgGrad);
-    g.fillAll();
+    // Background photo
+    if (bgPhoto.isValid()) {
+        g.drawImageWithin(bgPhoto, 0, 0, getWidth(), getHeight(),
+                          RectanglePlacement::fillDestination);
+        // Dark overlay for readability
+        g.setColour(Colour(0xD5050510));
+        g.fillAll();
+    } else {
+        g.setColour(C::bg);
+        g.fillAll();
+    }
 
-    // Scan-line texture (retro CRT feel)
-    g.setColour(Colour(0x06C8A060));
-    for (int y = 0; y < getHeight(); y += 3)
-        g.drawHorizontalLine(y, 0.f, (float)getWidth());
+    // Scanlines
+    g.setColour(Colour(0x0A00CCFF));
+    for (int y = 0; y < getHeight(); y += 4)
+        g.drawHorizontalLine(y, 0, (float)getWidth());
 
     // Header bar
-    g.setColour(C::panelDark);
-    g.fillRect(0, 0, getWidth(), 58);
-    g.setColour(C::border);
-    g.drawHorizontalLine(58, 0.f, (float)getWidth());
-    g.setColour(C::gold.withAlpha(0.15f));
-    g.drawHorizontalLine(59, 0.f, (float)getWidth());
+    g.setColour(Colour(0xBB080815));
+    g.fillRect(0, 0, getWidth(), 60);
+    g.setColour(C::cyan.withAlpha(0.3f));
+    g.drawHorizontalLine(60, 0, (float)getWidth());
 
-    // Section panels
-    paintSection(g, {8,   62, 220, 340}, "~~ SPRING REVERB ~~");
-    paintSection(g, {234, 62, 150, 340}, "~~ TREMOLO ~~");
-    paintSection(g, {390, 62, 90,  340}, "~~ DRIVE ~~");
-    paintSection(g, {486, 62, 90,  340}, "~~ LO-FI ~~");
-    paintSection(g, {582, 62, 110, 155}, "~~ EQ ~~");
+    auto drawPanel = [&](Rectangle<int> r, const char* title, Colour accent) {
+        g.setColour(Colour(0xBB0A0A18));
+        g.fillRoundedRectangle(r.toFloat(), 8.f);
+        g.setColour(accent.withAlpha(0.4f));
+        g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 8.f, 1.f);
+        // Top accent line
+        g.setColour(accent.withAlpha(0.7f));
+        g.fillRoundedRectangle((float)r.getX()+10, (float)r.getY(), (float)r.getWidth()-20, 2.f, 1.f);
+        // Title
+        g.setColour(accent);
+        g.setFont(Font("Arial", 9.f, Font::bold));
+        g.drawText(title, r.withHeight(22), Justification::centredTop, false);
+    };
 
-    // Output / VU panel
-    g.setColour(C::panelDark);
-    g.fillRoundedRectangle(582.f, 223.f, 110.f, 179.f, 5.f);
-    g.setColour(C::border);
-    g.drawRoundedRectangle(582.5f, 223.5f, 109.f, 178.f, 5.f, 1.f);
-    g.setColour(C::gold);
-    g.setFont(Font("Arial", 9.f, Font::bold));
-    g.drawText("~~ LEVEL ~~", Rectangle<int>{582, 223, 110, 20}, Justification::centredTop, false);
+    drawPanel({8,   64, 215, 420}, "SPRING REVERB",    C::cyan);
+    drawPanel({230, 64, 160, 420}, "TREMOLO",          C::amber);
+    drawPanel({397, 64, 230, 420}, "EFFETS",           C::purple);
+    drawPanel({634, 64, 98,  200}, "GUITARE",          C::green);
+    drawPanel({634, 270, 98, 214}, "NIVEAU",           C::dimWhite);
 }
 
+// ── Resized ───────────────────────────────────────────────────────────────────
 void GhostSurfEditor::resized()
 {
-    // Header
-    titleLabel.setBounds   (14, 8,  280, 30);
-    subtitleLabel.setBounds(14, 38, 280, 14);
-    presetBox.setBounds    (310, 14, 220, 28);
+    titleLabel.setBounds(10, 12, 220, 36);
+    presetBox.setBounds(240, 16, 200, 28);
 
-    // Knob size and base Y
-    const int KS  = 54;    // knob diameter
-    const int KY  = 95;    // top of knob area
+    // Mode buttons
+    modeNormal.setBounds(450, 16, 85, 28);
+    modeSwell.setBounds(540, 16, 85, 28);
+    modeArpege.setBounds(630, 16, 85, 28);
 
-    // SPRING REVERB — 3 knobs at x centres: 48, 118, 188
-    placeKnob(reverbMix,   48,  KY, KS);
-    placeKnob(reverbDecay, 118, KY, KS);
-    placeKnob(reverbTone,  188, KY, KS);
+    const int KS = 52;
+    const int KY = 130;
 
-    // TREMOLO — 2 knobs at x: 272, 342
-    placeKnob(tremSpeed, 272, KY, KS);
-    placeKnob(tremDepth, 342, KY, KS);
+    // REVERB section (x=8, w=215) — knob centres: 55, 115, 175
+    placeKnob(reverbMix,   55,  KY, KS);
+    placeKnob(reverbDecay, 115, KY, KS);
+    placeKnob(reverbTone,  175, KY, KS);
 
-    // DRIVE — 1 knob at x: 435
-    placeKnob(drive, 435, KY, KS);
+    // TREMOLO section (x=230, w=160)
+    placeKnob(tremSpeed, 280, KY, KS);
+    placeKnob(tremDepth, 350, KY, KS);
 
-    // LOFI — 1 knob at x: 531
-    placeKnob(lofi, 531, KY, KS);
+    tremSyncBtn.setBounds(238, 200, 80, 22);
+    tremDivBox.setBounds(325, 200, 56, 22);
 
-    // EQ — 2 knobs at x: 614, 669
-    placeKnob(bass,   614, KY,        KS);
-    placeKnob(treble, 669, KY,        KS);
+    // EFFETS section (x=397, w=230) — drive, lofi, bass, treble
+    placeKnob(drive,  445, KY, KS);
+    placeKnob(lofi,   505, KY, KS);
+    placeKnob(bass,   565, KY, KS);
+    placeKnob(treble, 620, KY, KS);
+
+    // GUITARE section (x=634, w=98) — shows different knobs by mode
+    swellAttack.slider.setVisible(currentMode == 1);
+    swellAttack.label.setVisible(currentMode == 1);
+    swellAmount.slider.setVisible(currentMode == 1);
+    swellAmount.label.setVisible(currentMode == 1);
+    slideAmount.slider.setVisible(currentMode != 1);
+    slideAmount.label.setVisible(currentMode != 1);
+    slideSpeed.slider.setVisible(currentMode != 1);
+    slideSpeed.label.setVisible(currentMode != 1);
+
+    placeKnob(swellAttack, 683, 105, KS);
+    placeKnob(swellAmount, 683, 185, KS);
+    placeKnob(slideAmount, 683, 105, KS);
+    placeKnob(slideSpeed,  683, 185, KS);
 
     // VU meter
-    vuMeter.setBounds(598, 240, 78, 155);
+    vuMeter.setBounds(642, 278, 82, 196);
 }

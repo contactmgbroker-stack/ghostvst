@@ -8,6 +8,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # git clone https://github.com/juce-framework/JUCE.git
 add_subdirectory(JUCE)
 
+juce_add_binary_data(GhostSurfData SOURCES Assets/cigare.png)
+
 juce_add_plugin(GhostSurf
     COMPANY_NAME            "WipeOut Audio"
     IS_SYNTH                FALSE
@@ -42,6 +44,7 @@ target_compile_definitions(GhostSurf
 
 target_link_libraries(GhostSurf
     PRIVATE
+        GhostSurfData
         juce::juce_audio_utils
         juce::juce_dsp
     PUBLIC
