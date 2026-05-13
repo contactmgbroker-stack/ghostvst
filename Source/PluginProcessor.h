@@ -40,7 +40,7 @@ struct AllpassFilter {
 class GhostSurfProcessor : public juce::AudioProcessor
 {
 public:
-    static constexpr int NUM_PRESETS = 10;
+    static constexpr int NUM_PRESETS = 12;
     static constexpr int SCOPE_SIZE  = 1024;
 
     GhostSurfProcessor();

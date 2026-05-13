@@ -365,6 +365,8 @@ static const PresetData PRESETS[GhostSurfProcessor::NUM_PRESETS] = {
     { "Joy Division - Trans.",  0.80f,  5.8f,  1800.f,  0.5f, 0.10f, false,  1,  0.08f, 0.12f, -2.f,  -4.f,  2, 0.4f, 0.70f, 0.00f,  3 },
     { "Jack White - Slide",     0.25f,  2.5f,  6000.f,  3.0f, 0.20f, false,  1,  0.70f, 0.08f,  5.f,   3.f,  0, 0.3f, 0.70f, 0.40f,  0 },
     { "Haunted Motel",          0.65f,  4.5f,  2800.f,  5.0f, 0.45f, false,  1,  0.15f, 0.15f,  0.f,   1.f,  2, 0.4f, 0.75f, 0.00f,  0 },
+    { "Jimi Hendrix - Purple",  0.28f,  1.8f,  6000.f,  0.5f, 0.00f, false,  1,  0.82f, 0.15f,  3.f,   5.f,  0, 0.3f, 0.70f, 0.12f,  0 },
+    { "Nile Rodgers - Le Freak",0.12f,  0.8f,  5500.f,  0.5f, 0.00f, false,  1,  0.03f, 0.02f, -1.f,   6.f,  2, 0.3f, 0.70f, 0.00f,  5 },
 };
 
 void GhostSurfProcessor::setCurrentProgram(int index)
