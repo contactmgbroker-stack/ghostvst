@@ -87,14 +87,23 @@ void OceanLookAndFeel::drawRotarySlider(Graphics& g,int x,int y,int w,int h,
 
     // ── Corps verre hémisphère ──────────────────────────────────────────────
     float ir=r*0.68f;
+    bool isHover=sl.isMouseOverOrDragging();
+    bool isDrag =sl.isMouseButtonDown();
+    // Légère élévation au survol / drag
+    float lift = isDrag?0.f : isHover?0.5f : 0.f;
     g.setColour(Colour(0xFF030C16)); g.fillEllipse(cc.x-r,cc.y-r,r*2,r*2);
-    ColourGradient body(Colour(0xFF1E4060),cc.x-ir*0.3f,cc.y-ir,
+    Colour bodyTop = isDrag ? Colour(0xFF284870) : Colour(0xFF1E4060);
+    ColourGradient body(bodyTop.brighter(lift*0.15f),cc.x-ir*0.3f,cc.y-ir,
                         Colour(0xFF050E1C),cc.x,cc.y+ir,false);
     g.setGradientFill(body); g.fillEllipse(cc.x-ir,cc.y-ir,ir*2,ir*2);
-    ColourGradient hl(Colour(0x32FFFFFF),cc.x-ir*0.2f,cc.y-ir*0.85f,
-                      Colour(0x00FFFFFF),cc.x,cc.y,true);
+    // Highlight spéculaire — plus intense au survol
+    uint8 hlAlpha = isDrag ? 0x48 : isHover ? 0x40 : 0x32;
+    ColourGradient hl(Colour(hlAlpha,0xFF,0xFF,0xFF),cc.x-ir*0.2f,cc.y-ir*0.85f,
+                      Colour(0x00,0xFF,0xFF,0xFF),cc.x,cc.y,true);
     g.setGradientFill(hl); g.fillEllipse(cc.x-ir*0.6f,cc.y-ir*0.95f,ir*1.2f,ir*0.9f);
-    g.setColour(ac.withAlpha(0.18f)); g.drawEllipse(cc.x-ir,cc.y-ir,ir*2,ir*2,1.f);
+    // Liseré accent : plus brillant si actif
+    g.setColour(ac.withAlpha(isHover?0.38f:0.18f));
+    g.drawEllipse(cc.x-ir,cc.y-ir,ir*2,ir*2,isHover?1.4f:1.f);
 
     // ── Indicateur ─────────────────────────────────────────────────────────
     auto dp=cc.getPointOnCircumference(ir*0.60f,va);
@@ -382,44 +391,48 @@ void SpecterPad::paint(Graphics& g)
 
 void SpecterPad::mouseDown(const MouseEvent& e)
 {
-    dragging=true;
     auto b=getLocalBounds().toFloat();
-    curX=jlimit(0.f,1.f,(e.x-b.getX())/b.getWidth());
-    curY=jlimit(0.f,1.f,(e.y-b.getY())/b.getHeight());
-    // Shape buttons (top row, 4×58px)
-    if(e.y<26){
-        int shp=jlimit(0,3,(int)((e.x-4)/58.f));
+    // Boutons forme en haut (zone y < 26px depuis le bord du component)
+    if(e.y < 26){
+        dragging=false;
+        int shp=jlimit(0,3,(int)((e.x-4.f)/58.f));
         proc.setSpecterShape(shp);
-        spawnParticles((float)e.x,(float)e.y,
-            shp==0?C::sky:shp==1?C::cobalt:shp==2?C::mint:C::violet,8);
+        static const Colour sc[]={C::sky,C::cobalt,C::mint,C::violet};
+        spawnParticles((float)e.x,(float)e.y,sc[shp],10);
         return;
     }
-    float fc=20.f*std::pow(1000.f,curX);    // log scale 20Hz-20kHz
+    dragging=true;
+    curX=jlimit(0.f,1.f,(e.x-b.getX())/b.getWidth());
+    curY=jlimit(0.f,1.f,(e.y-b.getY())/b.getHeight());
+    float fc=20.f*std::pow(1000.f,curX);   // log scale 20Hz→20kHz
     proc.setSpecterCutoff(fc);
     proc.setSpecterReso(1.f-curY);
-    spawnParticles((float)e.x,(float)e.y,C::aqua,6);
-    repaint();
+    spawnParticles((float)e.x,(float)e.y,C::aqua,8);
 }
 
 void SpecterPad::mouseDrag(const MouseEvent& e)
 {
     auto b=getLocalBounds().toFloat();
+    // Ignorer la zone des boutons en drag
+    if(!dragging) return;
     curX=jlimit(0.f,1.f,(e.x-b.getX())/b.getWidth());
     curY=jlimit(0.f,1.f,(e.y-b.getY())/b.getHeight());
     float fc=20.f*std::pow(1000.f,curX);
     proc.setSpecterCutoff(fc);
     proc.setSpecterReso(1.f-curY);
-    if(juce::Random::getSystemRandom().nextInt(4)==0)
-        spawnParticles((float)e.x,(float)e.y,C::aqua.withAlpha(0.6f),2);
-    repaint();
+    // Particules seulement toutes les 3 frames pour ne pas peser
+    if(juce::Random::getSystemRandom().nextInt(3)==0)
+        spawnParticles((float)e.x,(float)e.y,C::aqua.withAlpha(0.55f),2);
+    // Pas de repaint() ici — le timer 60Hz s'en charge
 }
 
 void SpecterPad::mouseMove(const MouseEvent& e)
 {
+    // Mise à jour de la position du curseur (preview hover)
+    // Le timer 60Hz gère le repaint — pas besoin d'appeler repaint() ici
     auto b=getLocalBounds().toFloat();
     curX=jlimit(0.f,1.f,(e.x-b.getX())/b.getWidth());
     curY=jlimit(0.f,1.f,(e.y-b.getY())/b.getHeight());
-    repaint();
 }
 
 void SpecterPad::mouseUp(const MouseEvent&) { dragging=false; }
@@ -518,10 +531,12 @@ void FreezePanel::mouseDown(const MouseEvent& e)
     auto b=getLocalBounds().toFloat();
     float cx=b.getCentreX(), cy=b.getY()+b.getHeight()*0.42f;
     float rad=jmin(b.getWidth(),b.getHeight())*0.28f;
-    if(e.getPosition().toFloat().getDistanceFrom({cx,cy})<rad+8){
+    // Zone cliquable généreuse : hexagone + 14px de marge
+    if(e.getPosition().toFloat().getDistanceFrom({cx,cy}) < rad+14.f)
         proc.setFreezeActive(!proc.isFreezing());
-    }
 }
+void FreezePanel::mouseEnter(const MouseEvent&) { setMouseCursor(MouseCursor::PointingHandCursor); }
+void FreezePanel::mouseExit (const MouseEvent&) { setMouseCursor(MouseCursor::NormalCursor); }
 
 // ── VUMeter ───────────────────────────────────────────────────────────────────
 VUMeter::VUMeter(GhostSurfProcessor& p):proc(p){startTimerHz(30);}
@@ -547,8 +562,17 @@ void VUMeter::paint(Graphics& g)
 // ── Knob builder ─────────────────────────────────────────────────────────────
 void GhostSurfEditor::buildKnob(KnobWidget& kw,const char* id,const char* lbl,Colour ac)
 {
-    kw.slider.setSliderStyle(Slider::RotaryVerticalDrag);
+    // Drag horizontal OU vertical — beaucoup plus naturel
+    kw.slider.setSliderStyle(Slider::RotaryHorizontalVerticalDrag);
     kw.slider.setTextBoxStyle(Slider::NoTextBox,false,0,0);
+    // 250 pixels pour la plage complète = précision confortable
+    kw.slider.setMouseDragSensitivity(250);
+    // Double-clic = retour à la valeur par défaut
+    if(auto* param=proc.getAPVTS().getParameter(id)){
+        double def=param->convertFrom0to1(param->getDefaultValue());
+        kw.slider.setDoubleClickReturnValue(true,def);
+    }
+    kw.slider.setScrollWheelEnabled(true);
     kw.slider.setLookAndFeel(&lf);
     if     (ac==C::aqua)   kw.slider.setComponentID("aqua");
     else if(ac==C::cobalt) kw.slider.setComponentID("cobalt");
@@ -556,6 +580,7 @@ void GhostSurfEditor::buildKnob(KnobWidget& kw,const char* id,const char* lbl,Co
     else if(ac==C::violet) kw.slider.setComponentID("violet");
     else if(ac==C::freeze) kw.slider.setComponentID("freeze");
     else                   kw.slider.setComponentID("sky");
+    kw.slider.setMouseCursor(MouseCursor::UpDownLeftRightResizeCursor);
     addAndMakeVisible(kw.slider);
     kw.label.setText(lbl,dontSendNotification);
     kw.label.setFont(Font("Arial",9.f,Font::bold));

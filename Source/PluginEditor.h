@@ -62,7 +62,9 @@ class FreezePanel : public juce::Component, private juce::Timer
 public:
     explicit FreezePanel(GhostSurfProcessor& p);
     void paint(juce::Graphics&) override;
-    void mouseDown(const juce::MouseEvent&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseEnter(const juce::MouseEvent&) override;
+    void mouseExit (const juce::MouseEvent&) override;
 private:
     void timerCallback() override;
     GhostSurfProcessor& proc;
