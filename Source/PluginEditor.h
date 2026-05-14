@@ -7,19 +7,16 @@ class OceanLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
     OceanLookAndFeel();
-    void drawRotarySlider(juce::Graphics&, int x, int y, int w, int h,
-                          float sliderPos, float startAngle, float endAngle,
-                          juce::Slider&) override;
-    void drawComboBox(juce::Graphics&, int w, int h, bool isDown,
-                      int bx, int by, int bw, int bh, juce::ComboBox&) override;
-    void drawButtonBackground(juce::Graphics&, juce::Button&,
-                              const juce::Colour& bg, bool highlighted, bool down) override;
+    void drawRotarySlider(juce::Graphics&,int x,int y,int w,int h,
+                          float pos,float start,float end,juce::Slider&) override;
+    void drawComboBox(juce::Graphics&,int w,int h,bool,int bx,int by,int bw,int bh,juce::ComboBox&) override;
+    void drawButtonBackground(juce::Graphics&,juce::Button&,const juce::Colour&,bool hi,bool) override;
     juce::Font getLabelFont(juce::Label&) override;
-    void drawLabel(juce::Graphics&, juce::Label&) override;
+    void drawLabel(juce::Graphics&,juce::Label&) override;
 };
 
 //==============================================================================
-// Oscilloscope avec cadre en forme de vague
+// Oscilloscope à cadre vague
 class WaveformDisplay : public juce::Component, private juce::Timer
 {
 public:
@@ -31,28 +28,50 @@ private:
 };
 
 //==============================================================================
-// Séquenceur d'arpège interactif : 8 steps cliquables/draggables
-class ArpEditor : public juce::Component, private juce::Timer
+// Specter Pad — filtre interactif avec particules
+class SpecterPad : public juce::Component, private juce::Timer
 {
 public:
-    explicit ArpEditor(GhostSurfProcessor& p);
+    explicit SpecterPad(GhostSurfProcessor& p);
+    ~SpecterPad() override = default;
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
-    void mouseUp(const juce::MouseEvent&) override;
-    void mouseDoubleClick(const juce::MouseEvent&) override;
+    void mouseMove(const juce::MouseEvent&) override;
+    void mouseUp  (const juce::MouseEvent&) override;
 
 private:
-    void timerCallback() override { repaint(); }
+    void timerCallback() override;
     GhostSurfProcessor& proc;
-    int   getStepAt(float x) const;
-    float getValForY(float y) const;
-    int   dragStep    = -1;
-    float dragStartY  = 0.f;
-    float dragStartVal= 0.f;
+
+    // Curseur local (normalisé 0-1)
+    float curX=0.5f, curY=0.3f;
+    bool  dragging=false;
+
+    // Particules
+    struct Particle { float x,y,vx,vy,life,maxLife,size; juce::Colour col; };
+    std::vector<Particle> particles;
+    void spawnParticles(float x,float y,juce::Colour c,int n=4);
+    void drawFilterCurve(juce::Graphics& g,juce::Rectangle<float> area,int shape);
 };
 
 //==============================================================================
+// Panneau Freeze : bouton animé + indicateur
+class FreezePanel : public juce::Component, private juce::Timer
+{
+public:
+    explicit FreezePanel(GhostSurfProcessor& p);
+    void paint(juce::Graphics&) override;
+    void mouseDown(const juce::MouseEvent&) override;
+private:
+    void timerCallback() override;
+    GhostSurfProcessor& proc;
+    float pulse=0.f, glowAnim=0.f;
+    bool  wasActive=false;
+};
+
+//==============================================================================
+// VU Meter
 class VUMeter : public juce::Component, private juce::Timer
 {
 public:
@@ -61,7 +80,7 @@ public:
 private:
     void timerCallback() override;
     GhostSurfProcessor& proc;
-    float displayLevel = 0.f;
+    float displayLevel=0.f;
 };
 
 //==============================================================================
@@ -72,8 +91,7 @@ struct KnobWidget {
 };
 
 //==============================================================================
-class GhostSurfEditor : public juce::AudioProcessorEditor,
-                        private juce::Timer
+class GhostSurfEditor : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
     explicit GhostSurfEditor(GhostSurfProcessor&);
@@ -90,34 +108,31 @@ private:
     KnobWidget reverbMix, reverbDecay, reverbTone;
     KnobWidget tremSpeed, tremDepth;
     KnobWidget drive, lofi, bass, treble;
-    KnobWidget swellAttack, swellAmount;
     KnobWidget slideAmount, slideSpeed;
+    KnobWidget vibeSpeed, vibeDepth;
+    KnobWidget freezeGrain, freezeShimmer, freezeDecay;
 
     // Controls
-    juce::ComboBox   presetBox;
-    juce::ToggleButton tremSyncBtn;
-    juce::ComboBox   tremDivBox;
-    juce::ComboBox   arpPatternBox;   // charge un pattern dans les 8 steps
-    juce::TextButton modeNormal, modeSwell, modeArpege;
-    juce::Label      titleLabel;
+    juce::ComboBox     presetBox;
+    juce::ToggleButton tremSyncBtn, vibeModeBtn;
+    juce::ComboBox     tremDivBox;
+
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>   tremSyncAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>   vibeModeAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tremDivAttach;
 
     VUMeter        vuMeter;
     WaveformDisplay waveDisplay;
-    ArpEditor       arpEditor;    // séquenceur interactif (panel bas)
+    SpecterPad      specterPad;
+    FreezePanel     freezePanel;
 
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>   tremSyncAttach;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tremDivAttach;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> presetAttach;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> arpPatternAttach;
+    // Surf Score animation
+    float scoreAnim=0.f;
+    int   comboFlash=0;
 
-    int  currentMode = 0;
-    bool arpBoxLive  = false;
-
-    void setGuitarMode(int mode);
-    void buildKnob(KnobWidget& kw, const char* paramID, const char* label, juce::Colour accent);
-    void placeKnob(KnobWidget& kw, int cx, int cy, int size);
-    // rank: 1=rouge, 2=orange, 3=jaune, 0=off
     void updateLiveHighlights(int presetIndex);
+    void buildKnob(KnobWidget&,const char* id,const char* label,juce::Colour accent);
+    void placeKnob(KnobWidget&,int cx,int cy,int size);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(GhostSurfEditor)
 };
