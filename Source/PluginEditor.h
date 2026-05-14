@@ -16,7 +16,6 @@ public:
 };
 
 //==============================================================================
-// Oscilloscope à cadre vague
 class WaveformDisplay : public juce::Component, private juce::Timer
 {
 public:
@@ -28,7 +27,6 @@ private:
 };
 
 //==============================================================================
-// Specter Pad — filtre interactif avec particules
 class SpecterPad : public juce::Component, private juce::Timer
 {
 public:
@@ -44,11 +42,12 @@ private:
     void timerCallback() override;
     GhostSurfProcessor& proc;
 
-    // Curseur local (normalisé 0-1)
+    // filterX/Y = committed filter position (updated only on click/drag)
+    float filterX=0.5f, filterY=0.3f;
+    // curX/Y = visual hover cursor only (no audio effect on hover)
     float curX=0.5f, curY=0.3f;
     bool  dragging=false;
 
-    // Particules
     struct Particle { float x,y,vx,vy,life,maxLife,size; juce::Colour col; };
     std::vector<Particle> particles;
     void spawnParticles(float x,float y,juce::Colour c,int n=4);
@@ -56,7 +55,6 @@ private:
 };
 
 //==============================================================================
-// Panneau Freeze : bouton animé + indicateur
 class FreezePanel : public juce::Component, private juce::Timer
 {
 public:
@@ -73,7 +71,6 @@ private:
 };
 
 //==============================================================================
-// VU Meter
 class VUMeter : public juce::Component, private juce::Timer
 {
 public:
@@ -100,21 +97,24 @@ public:
     ~GhostSurfEditor() override;
     void paint(juce::Graphics&) override;
     void resized() override;
+    bool keyPressed(const juce::KeyPress& k) override;
 
 private:
     void timerCallback() override;
     GhostSurfProcessor& proc;
     OceanLookAndFeel lf;
 
-    // Knobs
+    // ── Knobs ───────────────────────────────────────────────────────────────
     KnobWidget reverbMix, reverbDecay, reverbTone;
     KnobWidget tremSpeed, tremDepth;
+    KnobWidget flangerRate, flangerDepth, flangerFeedback;
     KnobWidget drive, lofi, bass, treble;
+    KnobWidget wahDepth, wahRate;
     KnobWidget slideAmount, slideSpeed;
     KnobWidget vibeSpeed, vibeDepth;
     KnobWidget freezeGrain, freezeShimmer, freezeDecay;
 
-    // Controls
+    // ── Controls ────────────────────────────────────────────────────────────
     juce::ComboBox     presetBox;
     juce::ToggleButton tremSyncBtn, vibeModeBtn;
     juce::ComboBox     tremDivBox;
@@ -123,14 +123,17 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>   vibeModeAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tremDivAttach;
 
-    VUMeter        vuMeter;
+    VUMeter         vuMeter;
     WaveformDisplay waveDisplay;
     SpecterPad      specterPad;
     FreezePanel     freezePanel;
 
-    // Surf Score animation
+    // ── Surf Score animation ─────────────────────────────────────────────────
     float scoreAnim=0.f;
     int   comboFlash=0;
+
+    // ── Live highlight random colours (one set per preset change) ───────────
+    juce::Colour liveColours[3];
 
     void updateLiveHighlights(int presetIndex);
     void buildKnob(KnobWidget&,const char* id,const char* label,juce::Colour accent);
