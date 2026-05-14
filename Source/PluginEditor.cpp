@@ -97,9 +97,9 @@ void OceanLookAndFeel::drawRotarySlider(Graphics& g,int x,int y,int w,int h,
                         Colour(0xFF050E1C),cc.x,cc.y+ir,false);
     g.setGradientFill(body); g.fillEllipse(cc.x-ir,cc.y-ir,ir*2,ir*2);
     // Highlight spéculaire — plus intense au survol
-    uint8 hlAlpha = isDrag ? 0x48 : isHover ? 0x40 : 0x32;
-    ColourGradient hl(Colour(hlAlpha,0xFF,0xFF,0xFF),cc.x-ir*0.2f,cc.y-ir*0.85f,
-                      Colour(0x00,0xFF,0xFF,0xFF),cc.x,cc.y,true);
+    float hlAlpha = isDrag ? 0.28f : isHover ? 0.25f : 0.20f;
+    ColourGradient hl(Colour(0xFFFFFFFF).withAlpha(hlAlpha), cc.x-ir*0.2f, cc.y-ir*0.85f,
+                      Colour(0x00FFFFFF),                    cc.x,          cc.y, true);
     g.setGradientFill(hl); g.fillEllipse(cc.x-ir*0.6f,cc.y-ir*0.95f,ir*1.2f,ir*0.9f);
     // Liseré accent : plus brillant si actif
     g.setColour(ac.withAlpha(isHover?0.38f:0.18f));
@@ -565,12 +565,13 @@ void GhostSurfEditor::buildKnob(KnobWidget& kw,const char* id,const char* lbl,Co
     // Drag horizontal OU vertical — beaucoup plus naturel
     kw.slider.setSliderStyle(Slider::RotaryHorizontalVerticalDrag);
     kw.slider.setTextBoxStyle(Slider::NoTextBox,false,0,0);
-    // 250 pixels pour la plage complète = précision confortable
-    kw.slider.setMouseDragSensitivity(250);
+    // Mode vélocité : glisse fluide, Ctrl = précision fine
+    kw.slider.setVelocityBasedMode(true);
+    kw.slider.setVelocityModeParameters(0.7, 1, 0.0, false);
     // Double-clic = retour à la valeur par défaut
     if(auto* param=proc.getAPVTS().getParameter(id)){
-        double def=param->convertFrom0to1(param->getDefaultValue());
-        kw.slider.setDoubleClickReturnValue(true,def);
+        double def=(double)param->convertFrom0to1(param->getDefaultValue());
+        kw.slider.setDoubleClickReturnValue(true, def);
     }
     kw.slider.setScrollWheelEnabled(true);
     kw.slider.setLookAndFeel(&lf);
