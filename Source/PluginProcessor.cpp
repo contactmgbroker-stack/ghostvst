@@ -52,6 +52,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout GhostSurfProcessor::createPa
     p.push_back(std::make_unique<juce::AudioParameterFloat>("freezeShimmer","Shimmer",0.f,1.f,0.f));
     p.push_back(std::make_unique<juce::AudioParameterFloat>("freezeDecay",  "Wet",    0.f,1.f,0.8f));
 
+    // Section bypass (ON/OFF LEDs) — new effects OFF by default
+    p.push_back(std::make_unique<juce::AudioParameterBool>("reverbOn",  "Reverb On",  true));
+    p.push_back(std::make_unique<juce::AudioParameterBool>("tremoloOn", "Tremolo On", true));
+    p.push_back(std::make_unique<juce::AudioParameterBool>("flangerOn", "Flanger On", false));
+    p.push_back(std::make_unique<juce::AudioParameterBool>("wahOn",     "Wah On",     false));
+    p.push_back(std::make_unique<juce::AudioParameterBool>("slideOn",   "Slide On",   true));
+    p.push_back(std::make_unique<juce::AudioParameterBool>("vibeOn",    "Vibe On",    true));
+    p.push_back(std::make_unique<juce::AudioParameterBool>("specterOn", "Specter On", false));
+
     return {p.begin(),p.end()};
 }
 
@@ -108,12 +117,13 @@ void GhostSurfProcessor::prepareToPlay(double sampleRate,int)
 
 void GhostSurfProcessor::updateEQ()
 {
+    // Force-refresh EQ coefficients (called from prepareToPlay)
+    prevBassGain=prevTrebleGain=-999.f;
     float bG=juce::Decibels::decibelsToGain(apvts.getRawParameterValue("bass")->load());
     float tG=juce::Decibels::decibelsToGain(apvts.getRawParameterValue("treble")->load());
-    *bassL.coefficients   = *Coeffs::makeLowShelf (sr,200.f, 0.707f,bG);
-    *bassR.coefficients   = *Coeffs::makeLowShelf (sr,200.f, 0.707f,bG);
-    *trebleL.coefficients = *Coeffs::makeHighShelf(sr,4000.f,0.707f,tG);
-    *trebleR.coefficients = *Coeffs::makeHighShelf(sr,4000.f,0.707f,tG);
+    *bassL.coefficients=*bassR.coefficients=*Coeffs::makeLowShelf(sr,200.f,0.707f,bG);
+    *trebleL.coefficients=*trebleR.coefficients=*Coeffs::makeHighShelf(sr,4000.f,0.707f,tG);
+    prevBassGain=bG; prevTrebleGain=tG;
 }
 
 void GhostSurfProcessor::updateSpecterCoeffs(float fc,float reso,int shape)
@@ -191,6 +201,15 @@ void GhostSurfProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::Mid
 
     if(auto* ph=getPlayHead()) if(auto pos=ph->getPosition()) if(auto bpm=pos->getBpm()) currentBPM=(float)*bpm;
 
+    // Bypass flags
+    const bool doReverb  = apvts.getRawParameterValue("reverbOn") ->load()>0.5f;
+    const bool doTremolo = apvts.getRawParameterValue("tremoloOn")->load()>0.5f;
+    const bool doFlanger = apvts.getRawParameterValue("flangerOn")->load()>0.5f;
+    const bool doWah     = apvts.getRawParameterValue("wahOn")    ->load()>0.5f;
+    const bool doSlide   = apvts.getRawParameterValue("slideOn")  ->load()>0.5f;
+    const bool doVibe    = apvts.getRawParameterValue("vibeOn")   ->load()>0.5f;
+    const bool doSpecter = apvts.getRawParameterValue("specterOn")->load()>0.5f;
+
     const double sc=sr/44100.0;
     const float fb  =reverbFeedback(reverbDecay,(int)(BASE_COMB_LEN[0]*sc),sr);
     const float damp=std::exp(-2.f*juce::MathConstants<float>::pi*reverbTone/(float)sr);
@@ -211,22 +230,30 @@ void GhostSurfProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::Mid
     const float slideC  =1.f-std::exp(-slideSpd/(float)sr);
     const int   sdSize  =(int)slideDelayL.size();
 
-    // Specter coeffs (once per block)
-    { float fc=specterCutoff.load(),res=specterReso.load(); int sh=specterShape.load();
-      if(sh==3){ chaosOffset+=(rng.nextFloat()-0.5f)*80.f; chaosOffset=juce::jlimit(-1000.f,1000.f,chaosOffset);
-                 fc=juce::jlimit(80.f,16000.f,fc+chaosOffset); }
-      updateSpecterCoeffs(fc,res,sh); }
+    // Specter coeffs (once per block, only when active)
+    if(doSpecter){
+        float fc=specterCutoff.load(),res=specterReso.load(); int sh=specterShape.load();
+        if(sh==3){ chaosOffset+=(rng.nextFloat()-0.5f)*80.f; chaosOffset=juce::jlimit(-1000.f,1000.f,chaosOffset);
+                   fc=juce::jlimit(80.f,16000.f,fc+chaosOffset); }
+        updateSpecterCoeffs(fc,res,sh);
+    }
 
-    // Wah coeffs (once per block, LFO step)
-    if(wahDepth>0.001f){
+    // Wah coeffs (once per block, only when active)
+    if(doWah && wahDepth>0.001f){
         wahLfoPhase+=wahInc*(float)NS;
         if(wahLfoPhase>juce::MathConstants<float>::twoPi) wahLfoPhase-=juce::MathConstants<float>::twoPi;
         float lfo=0.5f+0.5f*std::sin(wahLfoPhase);
-        float wahFc=400.f+lfo*wahDepth*2800.f; // 400-3200 Hz sweep
+        float wahFc=400.f+lfo*wahDepth*2800.f;
         updateWahCoeffs(wahFc,3.5f);
     }
 
-    updateEQ();
+    // EQ — cached: only recalculate when bass/treble actually changed
+    { float bG=juce::Decibels::decibelsToGain(apvts.getRawParameterValue("bass")->load());
+      float tG=juce::Decibels::decibelsToGain(apvts.getRawParameterValue("treble")->load());
+      if(bG!=prevBassGain){ prevBassGain=bG;
+          *bassL.coefficients=*bassR.coefficients=*Coeffs::makeLowShelf(sr,200.f,0.707f,bG); }
+      if(tG!=prevTrebleGain){ prevTrebleGain=tG;
+          *trebleL.coefficients=*trebleR.coefficients=*Coeffs::makeHighShelf(sr,4000.f,0.707f,tG); } }
     float peak=0.f;
     int swp=scopeWritePos.load(std::memory_order_relaxed);
 
@@ -244,13 +271,13 @@ void GhostSurfProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::Mid
         }
 
         // ── AUTO-WAH ───────────────────────────────────────────────────────
-        if(wahDepth>0.001f){
+        if(doWah && wahDepth>0.001f){
             float sL=wahB0*inL+wahZ1L; wahZ1L=wahB1*inL-wahA1*sL+wahZ2L; wahZ2L=wahB2*inL-wahA2*sL; inL=sL;
             float sR=wahB0*inR+wahZ1R; wahZ1R=wahB1*inR-wahA1*sR+wahZ2R; wahZ2R=wahB2*inR-wahA2*sR; inR=sR;
         }
 
         // ── SLIDE ──────────────────────────────────────────────────────────
-        if(slideAmt>0.001f){
+        if(doSlide && slideAmt>0.001f){
             slideDelayL[slideWritePos]=inL; slideDelayR[slideWritePos]=inR;
             slideCurrent+=(slideTarget-slideCurrent)*slideC;
             slideTarget=std::sin(slidePhase)*slideAmt*80.f;
@@ -265,7 +292,7 @@ void GhostSurfProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::Mid
         }
 
         // ── SPRING REVERB ──────────────────────────────────────────────────
-        if(reverbMix>0.001f){
+        if(doReverb && reverbMix>0.001f){
             float dL=inL,dR=inR;
             for(int j=0;j<NUM_AP;++j){dL=apL[j].tick(dL);dR=apR[j].tick(dR);}
             float wL=0.f,wR=0.f;
@@ -279,7 +306,7 @@ void GhostSurfProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::Mid
         bR[i]=trebleR.processSample(bassR.processSample(bR[i]));
 
         // ── TREMOLO ────────────────────────────────────────────────────────
-        if(tremDepth>0.001f){
+        if(doTremolo && tremDepth>0.001f){
             float mod=1.f-tremDepth*0.5f*(1.f+std::sin(tremoloPhase));
             bL[i]*=mod; bR[i]*=mod;
             tremoloPhase+=tremInc;
@@ -287,7 +314,7 @@ void GhostSurfProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::Mid
         }
 
         // ── FLANGER ────────────────────────────────────────────────────────
-        if(flanDepth>0.001f){
+        if(doFlanger && flanDepth>0.001f){
             flanLfoPhase+=flanInc;
             if(flanLfoPhase>=juce::MathConstants<float>::twoPi) flanLfoPhase-=juce::MathConstants<float>::twoPi;
             float lfo=0.5f+0.5f*std::sin(flanLfoPhase);
@@ -306,7 +333,7 @@ void GhostSurfProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::Mid
         }
 
         // ── UNI-VIBE ────────────────────────────────────────────────────────
-        if(vibeDepth>0.001f){
+        if(doVibe && vibeDepth>0.001f){
             vibeLfoPhase+=vibeInc;
             if(vibeLfoPhase>=juce::MathConstants<float>::twoPi) vibeLfoPhase-=juce::MathConstants<float>::twoPi;
             if(i%16==0){
@@ -323,8 +350,10 @@ void GhostSurfProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::Mid
         }
 
         // ── SPECTER FILTER ─────────────────────────────────────────────────
-        { float sL=spB0*bL[i]+spZ1L; spZ1L=spB1*bL[i]-spA1*sL+spZ2L; spZ2L=spB2*bL[i]-spA2*sL; bL[i]=sL;
-          float sR=spB0*bR[i]+spZ1R; spZ1R=spB1*bR[i]-spA1*sR+spZ2R; spZ2R=spB2*bR[i]-spA2*sR; bR[i]=sR; }
+        if(doSpecter){
+            float sL=spB0*bL[i]+spZ1L; spZ1L=spB1*bL[i]-spA1*sL+spZ2L; spZ2L=spB2*bL[i]-spA2*sL; bL[i]=sL;
+            float sR=spB0*bR[i]+spZ1R; spZ1R=spB1*bR[i]-spA1*sR+spZ2R; spZ2R=spB2*bR[i]-spA2*sR; bR[i]=sR;
+        }
 
         // ── SPECTRAL FREEZE ─────────────────────────────────────────────────
         freezeBufL[freezeWritePos]=bL[i]; freezeBufR[freezeWritePos]=bR[i];
@@ -400,19 +429,35 @@ struct PresetData {
     float freezeGrain,freezeShimmer,freezeDecay;
 };
 
+// Artist-accurate presets (research-based values)
+// Fields: name, reverbMix,reverbDecay,reverbTone, tremSpeed,tremDepth,tremSync,tremDiv,
+//         flanRate,flanDepth,flanFB, drive,lofi,bass,treble, wahDepth,wahRate,
+//         slideAmt, vibeSpd,vibeDepth,vibeVibrato, freezeGrain,freezeShimmer,freezeDecay
 static const PresetData PRESETS[GhostSurfProcessor::NUM_PRESETS]={
-    {"The Cure - A Forest",     0.78f,5.5f,2200.f, 3.0f,0.05f,true, 1, 0.3f,0.4f,0.5f,  0.05f,0.06f, 4.f,-1.f, 0.f,0.5f, 0.00f, 0.8f,0.35f,false, 0.6f,0.00f,0.70f},
-    {"Lil Peep - Ghost",        0.62f,4.0f,3500.f, 2.0f,0.28f,false,1, 0.1f,0.2f,0.3f,  0.18f,0.38f, 3.f,-3.f, 0.f,1.0f, 0.00f, 1.5f,0.20f,false, 0.7f,0.35f,0.80f},
-    {"Iggy Pop - Raw Power",    0.20f,1.5f,7000.f, 8.0f,0.65f,false,1, 0.0f,0.0f,0.0f,  0.95f,0.15f, 4.f, 6.f, 0.f,1.0f, 0.15f, 2.0f,0.10f,false, 0.2f,0.00f,0.00f},
-    {"Surf Clean",              0.40f,2.8f,4200.f, 4.5f,0.32f,false,1, 0.0f,0.0f,0.0f,  0.10f,0.04f, 1.f, 2.f, 0.f,1.0f, 0.00f, 1.2f,0.00f,false, 0.4f,0.00f,0.00f},
-    {"Night Waves",             0.70f,5.2f,3200.f, 1.5f,0.38f,false,1, 0.2f,0.5f,0.4f,  0.18f,0.10f, 2.f,-1.f, 0.f,0.5f, 0.00f, 0.5f,0.45f,false, 0.8f,0.60f,0.90f},
-    {"Dick Dale - Misirlou",    0.38f,2.0f,5500.f,15.0f,0.90f,true, 1, 0.0f,0.0f,0.0f,  0.08f,0.04f, 2.f, 4.f, 0.f,1.0f, 0.00f, 0.3f,0.00f,false, 0.3f,0.00f,0.00f},
-    {"The Pixies - Monkey",     0.55f,4.5f,3800.f, 1.5f,0.15f,false,1, 0.1f,0.3f,0.2f,  0.12f,0.05f, 0.f,-2.f, 0.f,1.0f, 0.00f, 2.5f,0.30f,false, 0.5f,0.10f,0.40f},
-    {"Joy Division - Trans.",   0.82f,5.8f,1800.f, 0.5f,0.10f,false,1, 0.4f,0.6f,0.3f,  0.08f,0.12f,-2.f,-4.f, 0.f,0.8f, 0.00f, 1.0f,0.50f,true,  0.9f,0.00f,0.60f},
-    {"Jack White - Slide",      0.25f,2.5f,6000.f, 3.0f,0.20f,false,1, 0.0f,0.0f,0.0f,  0.70f,0.08f, 5.f, 3.f, 0.f,1.0f, 0.45f, 1.8f,0.15f,false, 0.3f,0.00f,0.00f},
-    {"Haunted Motel",           0.68f,4.5f,2800.f, 5.0f,0.42f,false,1, 0.3f,0.7f,0.5f,  0.15f,0.15f, 0.f, 1.f, 0.f,1.0f, 0.00f, 3.5f,0.60f,false, 0.7f,0.75f,0.85f},
-    {"Jimi Hendrix - Woodstock",0.30f,2.0f,6000.f, 0.5f,0.00f,false,1, 0.0f,0.0f,0.0f,  0.82f,0.12f, 3.f, 5.f, 0.65f,2.f,0.12f, 2.2f,0.80f,false, 0.3f,0.15f,0.00f},
-    {"Nile Rodgers - Le Freak", 0.12f,0.8f,5500.f, 0.5f,0.00f,false,1, 0.0f,0.0f,0.0f,  0.03f,0.02f,-1.f, 6.f, 0.5f,4.f,0.00f, 4.0f,0.10f,false, 0.4f,0.20f,0.30f},
+ // The Cure: BF-2 flanger 50%rate/75%depth, SD-1 subtle drive, long dark reverb, slow tremolo
+ {"The Cure - A Forest",      0.72f,5.5f,2000.f,  3.0f,0.40f,true, 1,  0.50f,0.75f,0.25f, 0.15f,0.05f, 2.f,-2.f,  0.0f,1.0f,  0.00f,  0.8f,0.00f,false, 0.5f,0.00f,0.50f},
+ // Lil Peep: heavy reverb 60-80% wet, lofi tape warp, minimal drive
+ {"Lil Peep - Ghost",         0.75f,3.5f,3500.f,  2.0f,0.20f,false,1,  0.10f,0.15f,0.20f, 0.10f,0.45f, 2.f,-3.f,  0.0f,1.0f,  0.00f,  1.5f,0.20f,false, 0.7f,0.30f,0.80f},
+ // Iggy Pop: Fuzz Face both knobs max, cocked wah, Marshall supa fuzz
+ {"Iggy Pop - Raw Power",     0.10f,0.8f,7000.f,  0.5f,0.00f,false,1,  0.00f,0.00f,0.00f, 0.92f,0.10f, 4.f, 5.f,  0.4f,0.3f,  0.00f,  1.5f,0.00f,false, 0.2f,0.00f,0.00f},
+ // Dick Dale: Fender 6G15 high dwell spring reverb, clean, bright
+ {"Surf Clean - Dick Dale",   0.58f,1.5f,6000.f,  5.0f,0.00f,false,1,  0.00f,0.00f,0.00f, 0.00f,0.00f, 1.f, 4.f,  0.0f,1.0f,  0.00f,  0.8f,0.00f,false, 0.3f,0.00f,0.00f},
+ // Night Waves: shimmer reverb, slow deep tremolo, dark flanger, lofi
+ {"Night Waves",              0.80f,5.0f,1800.f,  1.5f,0.80f,false,1,  0.30f,0.40f,0.35f, 0.08f,0.25f, 2.f,-3.f,  0.0f,0.5f,  0.00f,  0.5f,0.40f,false, 0.8f,0.65f,0.90f},
+ // Dick Dale Misirlou: fast tremolo sync, high dwell spring reverb, clean
+ {"Dick Dale - Misirlou",     0.60f,1.2f,6500.f, 12.0f,0.85f,true, 1,  0.00f,0.00f,0.00f, 0.00f,0.00f, 2.f, 5.f,  0.0f,1.0f,  0.00f,  0.5f,0.00f,false, 0.3f,0.00f,0.00f},
+ // Pixies: OCD into JCM800, minimal reverb, Micro Vibe subtle
+ {"The Pixies - Monkey Gone", 0.25f,1.5f,4500.f,  4.0f,0.25f,false,1,  0.00f,0.00f,0.00f, 0.65f,0.05f, 0.f, 3.f,  0.0f,1.0f,  0.00f,  2.5f,0.20f,false, 0.4f,0.00f,0.30f},
+ // Joy Division: Clone Theory chorus, very dry dark reverb, mid-gain Vox OD, cold bright EQ
+ {"Joy Division - Atmosphere", 0.18f,0.8f,4000.f, 0.5f,0.00f,false,1,  0.30f,0.50f,0.20f, 0.28f,0.05f,-3.f, 5.f,  0.0f,1.0f,  0.00f,  1.0f,0.00f,false, 0.5f,0.00f,0.40f},
+ // Jack White: Big Muff sustain max, Fender Twin spring, slide
+ {"Jack White - Seven Nation", 0.30f,2.0f,5000.f, 3.0f,0.00f,false,1,  0.00f,0.00f,0.00f, 0.82f,0.10f, 5.f, 5.f,  0.0f,1.0f,  0.40f,  1.5f,0.15f,false, 0.3f,0.00f,0.00f},
+ // Haunted Motel: shimmer freeze, slow vibe, deep reverb
+ {"Haunted Motel",            0.75f,4.5f,2200.f,  2.0f,0.55f,false,1,  0.25f,0.50f,0.40f, 0.10f,0.20f, 1.f,-1.f,  0.0f,1.0f,  0.00f,  0.8f,0.55f,false, 0.7f,0.80f,0.85f},
+ // Jimi Hendrix Woodstock: Fuzz Face max, Vox wah dynamic, Uni-Vibe ~1Hz chorus mode
+ {"Jimi Hendrix - Woodstock", 0.08f,0.5f,7000.f,  0.5f,0.00f,false,1,  0.00f,0.00f,0.00f, 0.90f,0.08f, 3.f, 2.f,  0.7f,1.2f,  0.10f,  1.0f,0.82f,false, 0.3f,0.00f,0.00f},
+ // Nile Rodgers: NO reverb, perfectly clean, Neve EQ boost highs/cut lows, funk
+ {"Nile Rodgers - Le Freak",  0.00f,0.8f,6000.f,  0.5f,0.00f,false,1,  0.00f,0.00f,0.00f, 0.00f,0.00f,-5.f, 7.f,  0.0f,1.0f,  0.00f,  4.0f,0.00f,false, 0.4f,0.00f,0.00f},
 };
 
 void GhostSurfProcessor::setCurrentProgram(int index)
@@ -434,6 +479,15 @@ void GhostSurfProcessor::setCurrentProgram(int index)
     if(auto* p=apvts.getParameter("tremSync"))  p->setValueNotifyingHost(d.tremSync?1.f:0.f);
     if(auto* p=apvts.getParameter("tremDiv"))   p->setValueNotifyingHost(p->convertTo0to1((float)d.tremDiv));
     if(auto* p=apvts.getParameter("vibeMode"))  p->setValueNotifyingHost(d.vibeVibrato?1.f:0.f);
+    // Bypass: activate sections that have meaningful values, keep new FX off unless preset uses them
+    auto setB=[&](const char* id,bool v){ if(auto* p=apvts.getParameter(id)) p->setValueNotifyingHost(v?1.f:0.f); };
+    setB("reverbOn",  d.reverbMix>0.01f);
+    setB("tremoloOn", d.tremDepth>0.01f);
+    setB("flangerOn", d.flanDepth>0.05f);
+    setB("wahOn",     d.wahDepth>0.05f);
+    setB("slideOn",   d.slideAmt>0.05f);
+    setB("vibeOn",    d.vibeDepth>0.05f);
+    setB("specterOn", false); // Specter always starts off — user activates manually
 }
 
 const juce::String GhostSurfProcessor::getProgramName(int i)

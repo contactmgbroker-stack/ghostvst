@@ -157,6 +157,7 @@ private:
     using Coeffs  = juce::dsp::IIR::Coefficients<float>;
     using IIRFilt = juce::dsp::IIR::Filter<float>;
     IIRFilt bassL,bassR,trebleL,trebleR;
+    float prevBassGain=-999.f,prevTrebleGain=-999.f; // cache for EQ coefficients
 
     double sr=44100.0;
     std::atomic<float> outputLevel{0.f};

@@ -42,9 +42,9 @@ private:
     void timerCallback() override;
     GhostSurfProcessor& proc;
 
-    // filterX/Y = committed filter position (updated only on click/drag)
+    // filterX/Y = committed audio filter position (click/drag only)
     float filterX=0.5f, filterY=0.3f;
-    // curX/Y = visual hover cursor only (no audio effect on hover)
+    // curX/Y = visual cursor preview (hover)
     float curX=0.5f, curY=0.3f;
     bool  dragging=false;
 
@@ -104,7 +104,7 @@ private:
     GhostSurfProcessor& proc;
     OceanLookAndFeel lf;
 
-    // ── Knobs ───────────────────────────────────────────────────────────────
+    // ── Knobs ────────────────────────────────────────────────────────────────
     KnobWidget reverbMix, reverbDecay, reverbTone;
     KnobWidget tremSpeed, tremDepth;
     KnobWidget flangerRate, flangerDepth, flangerFeedback;
@@ -114,7 +114,7 @@ private:
     KnobWidget vibeSpeed, vibeDepth;
     KnobWidget freezeGrain, freezeShimmer, freezeDecay;
 
-    // ── Controls ────────────────────────────────────────────────────────────
+    // ── Controls ─────────────────────────────────────────────────────────────
     juce::ComboBox     presetBox;
     juce::ToggleButton tremSyncBtn, vibeModeBtn;
     juce::ComboBox     tremDivBox;
@@ -123,6 +123,14 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>   vibeModeAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tremDivAttach;
 
+    // ── LED bypass buttons ───────────────────────────────────────────────────
+    juce::ToggleButton ledReverb, ledTremolo, ledFlanger, ledWah,
+                       ledSlide, ledVibe, ledSpecter;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>
+        ledReverbA, ledTremoloA, ledFlangerA, ledWahA,
+        ledSlideA, ledVibeA, ledSpecterA;
+
+    // ── Subcomponents ────────────────────────────────────────────────────────
     VUMeter         vuMeter;
     WaveformDisplay waveDisplay;
     SpecterPad      specterPad;
@@ -132,12 +140,14 @@ private:
     float scoreAnim=0.f;
     int   comboFlash=0;
 
-    // ── Live highlight random colours (one set per preset change) ───────────
+    // ── Live highlight colors (random per preset) ────────────────────────────
     juce::Colour liveColours[3];
 
+    // ── Helpers ──────────────────────────────────────────────────────────────
     void updateLiveHighlights(int presetIndex);
     void buildKnob(KnobWidget&,const char* id,const char* label,juce::Colour accent);
     void placeKnob(KnobWidget&,int cx,int cy,int size);
+    juce::Slider* findRankedSlider(int rank);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(GhostSurfEditor)
 };
