@@ -52,6 +52,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout GhostSurfProcessor::createPa
     p.push_back(std::make_unique<juce::AudioParameterFloat>("freezeShimmer","Shimmer",0.f,1.f,0.f));
     p.push_back(std::make_unique<juce::AudioParameterFloat>("freezeDecay",  "Wet",    0.f,1.f,0.8f));
 
+    // Auto-Pan
+    p.push_back(std::make_unique<juce::AudioParameterFloat>("autoPanRate","Auto-Pan Rate",
+        juce::NormalisableRange<float>(0.05f,8.f,0.01f,0.5f),0.5f));
+
     // Section bypass (ON/OFF LEDs) — new effects OFF by default
     p.push_back(std::make_unique<juce::AudioParameterBool>("reverbOn",  "Reverb On",  true));
     p.push_back(std::make_unique<juce::AudioParameterBool>("tremoloOn", "Tremolo On", true));
@@ -59,7 +63,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout GhostSurfProcessor::createPa
     p.push_back(std::make_unique<juce::AudioParameterBool>("wahOn",     "Wah On",     false));
     p.push_back(std::make_unique<juce::AudioParameterBool>("slideOn",   "Slide On",   true));
     p.push_back(std::make_unique<juce::AudioParameterBool>("vibeOn",    "Vibe On",    true));
-    p.push_back(std::make_unique<juce::AudioParameterBool>("specterOn", "Specter On", false));
+    p.push_back(std::make_unique<juce::AudioParameterBool>("specterOn",  "Specter On",  false));
+    p.push_back(std::make_unique<juce::AudioParameterBool>("autoPanOn",  "Auto-Pan On", false));
 
     return {p.begin(),p.end()};
 }
@@ -208,7 +213,10 @@ void GhostSurfProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::Mid
     const bool doWah     = apvts.getRawParameterValue("wahOn")    ->load()>0.5f;
     const bool doSlide   = apvts.getRawParameterValue("slideOn")  ->load()>0.5f;
     const bool doVibe    = apvts.getRawParameterValue("vibeOn")   ->load()>0.5f;
-    const bool doSpecter = apvts.getRawParameterValue("specterOn")->load()>0.5f;
+    const bool doSpecter  = apvts.getRawParameterValue("specterOn") ->load()>0.5f;
+    const bool doAutoPan  = apvts.getRawParameterValue("autoPanOn") ->load()>0.5f;
+    const float autoPanRate = apvts.getRawParameterValue("autoPanRate")->load();
+    const float autoPanInc  = 2.f*juce::MathConstants<float>::pi*autoPanRate/(float)sr;
 
     const double sc=sr/44100.0;
     const float fb  =reverbFeedback(reverbDecay,(int)(BASE_COMB_LEN[0]*sc),sr);
@@ -391,6 +399,19 @@ void GhostSurfProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::Mid
             lofiLpR=lofiLpR*tapeLpA+bR[i]*(1.f-tapeLpA);
             bL[i]=lofiLpL+(rng.nextFloat()*2.f-1.f)*noiseAmt*nm;
             bR[i]=lofiLpR+(rng.nextFloat()*2.f-1.f)*noiseAmt*nm;
+        }
+
+        // ── AUTO-PAN (equal-power rotation L→R) ────────────────────────────
+        if(doAutoPan){
+            autoPanPhase+=autoPanInc;
+            if(autoPanPhase>=juce::MathConstants<float>::twoPi)
+                autoPanPhase-=juce::MathConstants<float>::twoPi;
+            // 0→PI/2 sweep gives equal-power left↔right rotation
+            float panPos=0.5f+0.5f*std::sin(autoPanPhase); // 0=full left, 1=full right
+            float panAngle=panPos*juce::MathConstants<float>::halfPi;
+            float gainL=std::cos(panAngle)*juce::MathConstants<float>::sqrt2;
+            float gainR=std::sin(panAngle)*juce::MathConstants<float>::sqrt2;
+            bL[i]*=gainL; bR[i]*=gainR;
         }
 
         // ── DC BLOCKER + LIMITER ────────────────────────────────────────────

@@ -141,6 +141,9 @@ private:
     float chaosOffset=0.f;
     void  updateSpecterCoeffs(float fc,float reso,int shape);
 
+    // Auto-Pan
+    float autoPanPhase=0.f;
+
     // Slide
     float slidePhase=0.f,slideTarget=0.f,slideCurrent=0.f;
     std::vector<float> slideDelayL,slideDelayR;

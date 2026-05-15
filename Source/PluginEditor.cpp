@@ -582,6 +582,7 @@ GhostSurfEditor::GhostSurfEditor(GhostSurfProcessor& p)
     setupLed(ledSlide,   ledSlideA,   "slideOn");
     setupLed(ledVibe,    ledVibeA,    "vibeOn");
     setupLed(ledSpecter, ledSpecterA, "specterOn");
+    setupLed(ledAutoPan, ledAutoPanA, "autoPanOn");
 
     // Knobs
     buildKnob(reverbMix,      "reverbMix",      "MIX",    C::sky);
@@ -598,6 +599,7 @@ GhostSurfEditor::GhostSurfEditor(GhostSurfProcessor& p)
     buildKnob(treble,         "treble",         "AIGUS",  C::cobalt);
     buildKnob(wahDepth,       "wahDepth",       "DEPTH",  C::cobalt);
     buildKnob(wahRate,        "wahRate",        "RATE",   C::cobalt);
+    buildKnob(autoPanRate,    "autoPanRate",    "VITESSE",C::mint);
     buildKnob(slideAmount,    "slideAmount",    "GLISS",  C::mint);
     buildKnob(slideSpeed,     "slideSpeed",     "SPEED",  C::mint);
     buildKnob(vibeSpeed,      "vibeSpeed",      "SPEED",  C::violet);
@@ -787,6 +789,8 @@ void GhostSurfEditor::paint(Graphics& g)
     g.drawText("-- FLANGER --",235,248,154,12,Justification::centred);
     g.setColour(C::cobalt.withAlpha(0.40f));
     g.drawText("-- WAH-WAH --",405,248,226,12,Justification::centred);
+    g.setColour(C::mint.withAlpha(0.40f));
+    g.drawText("-- AUTO-PAN --",405,315,226,12,Justification::centred);
 
     // Uni-Vibe spinning wheel
     {
@@ -822,6 +826,7 @@ void GhostSurfEditor::resized()
     ledSlide  .setBounds(744,71,16,16);
     ledVibe   .setBounds(744,234,16,16);
     ledSpecter.setBounds(626,395,16,16);
+    ledAutoPan.setBounds(626,318,16,16);
 
     const int KS=52,KY=128;
 
@@ -849,6 +854,9 @@ void GhostSurfEditor::resized()
     // Wah-Wah knobs (sub-section below effets)
     placeKnob(wahDepth,449,274,44);
     placeKnob(wahRate, 509,274,44);
+
+    // Auto-Pan knob (sub-section below wah)
+    placeKnob(autoPanRate,518,340,44);
 
     // Slide
     placeKnob(slideAmount,698,105,KS);

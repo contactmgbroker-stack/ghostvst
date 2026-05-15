@@ -110,6 +110,7 @@ private:
     KnobWidget flangerRate, flangerDepth, flangerFeedback;
     KnobWidget drive, lofi, bass, treble;
     KnobWidget wahDepth, wahRate;
+    KnobWidget autoPanRate;
     KnobWidget slideAmount, slideSpeed;
     KnobWidget vibeSpeed, vibeDepth;
     KnobWidget freezeGrain, freezeShimmer, freezeDecay;
@@ -125,10 +126,10 @@ private:
 
     // ── LED bypass buttons ───────────────────────────────────────────────────
     juce::ToggleButton ledReverb, ledTremolo, ledFlanger, ledWah,
-                       ledSlide, ledVibe, ledSpecter;
+                       ledSlide, ledVibe, ledSpecter, ledAutoPan;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>
         ledReverbA, ledTremoloA, ledFlangerA, ledWahA,
-        ledSlideA, ledVibeA, ledSpecterA;
+        ledSlideA, ledVibeA, ledSpecterA, ledAutoPanA;
 
     // ── Subcomponents ────────────────────────────────────────────────────────
     VUMeter         vuMeter;
