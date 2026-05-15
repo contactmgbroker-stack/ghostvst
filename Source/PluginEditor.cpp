@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include <BinaryData.h>
 using namespace juce;
 
 // ── Palette ───────────────────────────────────────────────────────────────────
@@ -13,7 +14,7 @@ namespace C {
     const Colour ice   { 0xFFCCEEFF };
     const Colour dim   { 0xFF4070A0 };
     const Colour ledOn { 0xFF00FF88 };
-    const Colour ledOff{ 0xFF883333 };
+    const Colour ledOff{ 0xFF992222 };
 }
 
 static Colour accentOf(const Slider& s) {
@@ -39,6 +40,9 @@ OceanLookAndFeel::OceanLookAndFeel()
     setColour(Label::textColourId,           C::dim);
     setColour(ToggleButton::textColourId,    C::ice);
     setColour(ToggleButton::tickColourId,    C::sky);
+    setColour(TextButton::textColourOffId,   C::sky);
+    setColour(TextButton::textColourOnId,    C::ice);
+    setColour(TextButton::buttonColourId,    Colour(0xFF0A1825));
 }
 
 void OceanLookAndFeel::drawRotarySlider(Graphics& g,int x,int y,int w,int h,
@@ -49,7 +53,7 @@ void OceanLookAndFeel::drawRotarySlider(Graphics& g,int x,int y,int w,int h,
     float r=jmin(b.getWidth(),b.getHeight())*0.42f;
     Colour ac=accentOf(sl);
 
-    // Live highlight ring — random color stored per slider
+    // Live highlight ring
     int rank=(int)sl.getProperties()["live"];
     if(rank>0){
         var lv=sl.getProperties()["liveColor"];
@@ -131,43 +135,80 @@ void OceanLookAndFeel::drawButtonBackground(Graphics& g,Button& btn,const Colour
 {
     auto b=btn.getLocalBounds().toFloat();
     bool on=btn.getToggleState();
-    // Small LED (<=20px) — drawn as glowing circle
-    if(b.getHeight()<=20.f && b.getWidth()<=20.f){
-        float r=jmin(b.getWidth(),b.getHeight())*0.38f;
+
+    // ── LED circle (<=22px) ──────────────────────────────────────────────────
+    if(b.getHeight()<=22.f && b.getWidth()<=22.f){
+        float r=jmin(b.getWidth(),b.getHeight())*0.40f;
         auto cc=b.getCentre();
         Colour ledCol=on?C::ledOn:C::ledOff;
-        if(on){ g.setColour(ledCol.withAlpha(0.30f)); g.fillEllipse(cc.x-r-3,cc.y-r-3,(r+3)*2,(r+3)*2); }
-        g.setColour(Colour(0xFF030810)); g.fillEllipse(cc.x-r,cc.y-r,r*2,r*2);
-        ColourGradient fill(ledCol.brighter(0.4f),cc.x-r*0.3f,cc.y-r*0.7f,ledCol.darker(0.3f),cc.x,cc.y+r,false);
-        g.setGradientFill(fill); g.fillEllipse(cc.x-r,cc.y-r,r*2,r*2);
-        g.setColour(ledCol.withAlpha(0.70f)); g.drawEllipse(cc.x-r,cc.y-r,r*2,r*2,1.f);
+
+        // Outer animated glow when ON
+        if(on){
+            float pulse=0.55f+0.45f*std::sin((float)Time::getMillisecondCounter()*0.006f);
+            g.setColour(ledCol.withAlpha(0.38f*pulse));
+            g.fillEllipse(cc.x-r-5.f,cc.y-r-5.f,(r+5.f)*2,(r+5.f)*2);
+            g.setColour(ledCol.withAlpha(0.16f*pulse));
+            g.fillEllipse(cc.x-r-9.f,cc.y-r-9.f,(r+9.f)*2,(r+9.f)*2);
+        }
+        // Dark bezel ring
+        g.setColour(Colour(0xFF010305));
+        g.fillEllipse(cc.x-r-1.5f,cc.y-r-1.5f,(r+1.5f)*2,(r+1.5f)*2);
+
+        // LED body gradient
+        ColourGradient fill(ledCol.brighter(0.55f),cc.x-r*0.28f,cc.y-r*0.72f,
+                            ledCol.darker(0.45f),cc.x,cc.y+r,false);
+        g.setGradientFill(fill);
+        g.fillEllipse(cc.x-r,cc.y-r,r*2,r*2);
+
+        // Specular highlight
+        ColourGradient hl(Colour(0xAAFFFFFF),cc.x-r*0.22f,cc.y-r*0.78f,
+                          Colour(0x00FFFFFF),cc.x+r*0.1f,cc.y-r*0.1f,false);
+        g.setGradientFill(hl);
+        g.fillEllipse(cc.x-r*0.52f,cc.y-r*0.88f,r*1.05f,r*0.82f);
+
+        // Rim
+        g.setColour(ledCol.withAlpha(on?0.90f:0.50f));
+        g.drawEllipse(cc.x-r,cc.y-r,r*2,r*2,1.f);
         return;
     }
-    // Normal toggle button
+
+    // ── Regular button (SYNC, VIBRATO, website) ──────────────────────────────
     if(on){
-        ColourGradient gr(C::sky.withAlpha(0.25f),b.getX(),b.getY(),C::sky.withAlpha(0.07f),b.getX(),b.getBottom(),false);
+        ColourGradient gr(C::sky.withAlpha(0.25f),b.getX(),b.getY(),
+                          C::sky.withAlpha(0.07f),b.getX(),b.getBottom(),false);
         g.setGradientFill(gr); g.fillRoundedRectangle(b,7.f);
-        g.setColour(C::sky.withAlpha(0.80f)); g.drawRoundedRectangle(b.reduced(0.5f),7.f,1.5f);
+        g.setColour(C::sky.withAlpha(0.80f));
+        g.drawRoundedRectangle(b.reduced(0.5f),7.f,1.5f);
     } else {
-        ColourGradient gr(Colour(0xFF0C1E32),b.getX(),b.getY(),Colour(0xFF070F1E),b.getX(),b.getBottom(),false);
+        ColourGradient gr(Colour(0xFF0C1E32),b.getX(),b.getY(),
+                          Colour(0xFF070F1E),b.getX(),b.getBottom(),false);
         g.setGradientFill(gr); g.fillRoundedRectangle(b,7.f);
-        g.setColour(hi?C::sky.withAlpha(0.35f):C::sky.withAlpha(0.18f));
+        g.setColour(hi?C::sky.withAlpha(0.50f):C::sky.withAlpha(0.22f));
         g.drawRoundedRectangle(b.reduced(0.5f),7.f,1.f);
     }
 }
 
-void OceanLookAndFeel::drawTickBox(Graphics& g,Component& comp,
+void OceanLookAndFeel::drawButtonText(Graphics& g,TextButton& btn,bool hi,bool)
+{
+    auto b=btn.getLocalBounds().toFloat();
+    g.setFont(Font("Arial",9.f,Font::bold));
+    Colour tc=hi ? C::ice : C::sky;
+    g.setColour(tc);
+    g.drawText(btn.getButtonText(),b.toNearestInt(),Justification::centred,false);
+}
+
+void OceanLookAndFeel::drawTickBox(Graphics& g,Component&,
     float x,float y,float w,float h,bool ticked,bool,bool,bool)
 {
-    // For LED-sized buttons suppress the checkbox entirely — LED drawn in drawButtonBackground
-    if(w<=20.f && h<=20.f) return;
-    // For larger toggles (SYNC, VIBRATO) draw a minimal rounded rect tick
+    // LED-sized buttons: no tick drawn — LED is handled in drawButtonBackground
+    if(w<=22.f && h<=22.f) return;
+    // Larger toggles (SYNC, VIBRATO): minimal rounded rect indicator
     Rectangle<float> r(x,y,w,h);
-    g.setColour(ticked ? C::sky.withAlpha(0.9f) : Colour(0xFF1A3050));
+    g.setColour(ticked ? C::sky.withAlpha(0.90f) : Colour(0xFF1A3050));
     g.fillRoundedRectangle(r,3.f);
     g.setColour(C::sky.withAlpha(0.55f)); g.drawRoundedRectangle(r,3.f,1.f);
     if(ticked){ g.setColour(C::ice); g.setFont(10.f);
-                g.drawText("✓",r.toNearestInt(),Justification::centred); }
+                g.drawText("ON",r.toNearestInt(),Justification::centred); }
 }
 
 Font OceanLookAndFeel::getLabelFont(Label&) { return Font("Arial",9.5f,Font::bold); }
@@ -191,6 +232,23 @@ static void drawPanel(Graphics& g,Rectangle<int> r,const char* title,Colour ac)
     g.setColour(Colour(0x10FFFFFF)); g.drawRoundedRectangle(rf.reduced(2.f),8.f,0.7f);
     g.setColour(ac.brighter(0.15f)); g.setFont(Font("Arial",8.5f,Font::bold));
     g.drawText(title,r.withHeight(20),Justification::centredTop,false);
+}
+
+// ── Sub-section divider ───────────────────────────────────────────────────────
+static void drawDivider(Graphics& g,int x,int y,int w,const char* label,Colour ac)
+{
+    // Faint horizontal line
+    g.setColour(ac.withAlpha(0.18f));
+    g.drawHorizontalLine(y+7, (float)x+4, (float)(x+w-4));
+    // Label pill
+    int lw=58;
+    int lx=x+(w-lw)/2;
+    g.setColour(ac.withAlpha(0.12f));
+    g.fillRoundedRectangle((float)lx,(float)y,lw,14.f,4.f);
+    g.setColour(ac.withAlpha(0.55f));
+    g.drawRoundedRectangle((float)lx,(float)y,lw,14.f,4.f,0.8f);
+    g.setColour(ac.brighter(0.1f)); g.setFont(Font("Arial",7.5f,Font::bold));
+    g.drawText(label,lx,y,lw,14,Justification::centred,false);
 }
 
 // ── Scratched neon title ──────────────────────────────────────────────────────
@@ -327,7 +385,7 @@ void SpecterPad::paint(Graphics& g)
         g.setColour(p.col.withAlpha(alpha*0.85f));
         g.fillEllipse(p.x-p.size*0.5f,p.y-p.size*0.5f,p.size,p.size);
     }
-    // Visual cursor (hover — curX/curY)
+    // Visual cursor (hover)
     float cx=b.getX()+curX*W,cy=b.getY()+curY*H;
     g.setColour(C::sky.withAlpha(0.10f));
     g.drawVerticalLine((int)cx,(float)b.getY(),(float)b.getBottom());
@@ -336,7 +394,7 @@ void SpecterPad::paint(Graphics& g)
     g.setGradientFill(glow); g.fillEllipse(cx-18,cy-18,36,36);
     g.setColour(C::ice); g.fillEllipse(cx-4,cy-4,8,8);
     g.setColour(C::aqua.withAlpha(0.85f)); g.drawEllipse(cx-5,cy-5,10,10,1.5f);
-    // Committed filter marker (filterX/filterY)
+    // Committed filter marker (cross-hair)
     if(!dragging){
         float fx=b.getX()+filterX*W,fy=b.getY()+filterY*H;
         g.setColour(C::mint.withAlpha(0.55f));
@@ -397,7 +455,6 @@ void SpecterPad::mouseDrag(const MouseEvent& e)
 
 void SpecterPad::mouseMove(const MouseEvent& e)
 {
-    // Only update visual cursor — no audio change on hover
     auto b=getLocalBounds().toFloat();
     curX=jlimit(0.f,1.f,(e.x-b.getX())/b.getWidth());
     curY=jlimit(0.f,1.f,(e.y-b.getY())/b.getHeight());
@@ -482,7 +539,7 @@ VUMeter::VUMeter(GhostSurfProcessor& p):proc(p){ startTimerHz(30); }
 void VUMeter::timerCallback()
 {
     float target=proc.getOutputLevel();
-    float coeff=(target>displayLevel)?0.40f:0.06f; // fast attack, slow release
+    float coeff=(target>displayLevel)?0.40f:0.06f;
     displayLevel+=(target-displayLevel)*coeff;
     repaint();
 }
@@ -495,7 +552,7 @@ void VUMeter::paint(Graphics& g)
     g.setColour(C::sky.withAlpha(0.28f)); g.drawRoundedRectangle(b.reduced(0.5f),5.f,1.f);
     const int S=20; float sH=(b.getHeight()-22.f)/S;
     float db=Decibels::gainToDecibels(displayLevel,-60.f);
-    int lit=jlimit(0,S,(int)(jmap(db,-36.f,0.f,0.f,1.f)*S)); // range -36 to 0 dBFS
+    int lit=jlimit(0,S,(int)(jmap(db,-36.f,0.f,0.f,1.f)*S));
     for(int i=0;i<S;++i){
         auto seg=Rectangle<float>(b.getX()+5,b.getBottom()-15.f-(i+1)*sH,b.getWidth()-10,sH-1.5f);
         Colour sc=i<lit?(i>=S-2?Colour(0xFFFF1133):i>=S-5?Colour(0xFFFF9900):C::aqua):Colour(0xFF091A28);
@@ -510,7 +567,7 @@ void GhostSurfEditor::buildKnob(KnobWidget& kw,const char* id,const char* lbl,Co
 {
     kw.slider.setSliderStyle(Slider::RotaryHorizontalVerticalDrag);
     kw.slider.setTextBoxStyle(Slider::NoTextBox,false,0,0);
-    kw.slider.setVelocityBasedMode(false); // direct drag — feels natural
+    kw.slider.setVelocityBasedMode(false);
     kw.slider.setScrollWheelEnabled(true);
     if(auto* param=proc.getAPVTS().getParameter(id)){
         double def=(double)param->convertFrom0to1(param->getDefaultValue());
@@ -577,7 +634,7 @@ GhostSurfEditor::GhostSurfEditor(GhostSurfProcessor& p)
     addAndMakeVisible(tremDivBox);
     tremDivAttach=std::make_unique<AudioProcessorValueTreeState::ComboBoxAttachment>(proc.getAPVTS(),"tremDiv",tremDivBox);
 
-    // Vibe mode — positioned to not overlap DEPTH knob
+    // Vibe mode
     vibeModeBtn.setButtonText("VIBRATO"); vibeModeBtn.setLookAndFeel(&lf); addAndMakeVisible(vibeModeBtn);
     vibeModeAttach=std::make_unique<AudioProcessorValueTreeState::ButtonAttachment>(proc.getAPVTS(),"vibeMode",vibeModeBtn);
 
@@ -597,6 +654,12 @@ GhostSurfEditor::GhostSurfEditor(GhostSurfProcessor& p)
     setupLed(ledVibe,    ledVibeA,    "vibeOn");
     setupLed(ledSpecter, ledSpecterA, "specterOn");
     setupLed(ledAutoPan, ledAutoPanA, "autoPanOn");
+
+    // Website button
+    websiteBtn.setButtonText("mgbroker.ch");
+    websiteBtn.setLookAndFeel(&lf);
+    websiteBtn.onClick=[]{ URL("https://mgbroker.ch/").launchInDefaultBrowser(); };
+    addAndMakeVisible(websiteBtn);
 
     // Knobs
     buildKnob(reverbMix,      "reverbMix",      "MIX",    C::sky);
@@ -676,7 +739,6 @@ bool GhostSurfEditor::keyPressed(const KeyPress& k)
 // ── updateLiveHighlights ─────────────────────────────────────────────────────
 void GhostSurfEditor::updateLiveHighlights(int idx)
 {
-    // Deterministic random hues — evenly spaced 120 degrees apart
     Random rnd((int64)(idx*77777+12345));
     float h0=rnd.nextFloat();
     liveColours[0]=Colour::fromHSV(h0,                    0.90f,1.00f,1.f);
@@ -685,18 +747,18 @@ void GhostSurfEditor::updateLiveHighlights(int idx)
 
     struct Def { const char* p1,*p2,*p3; };
     static const Def L[12]={
-        {"reverbMix",    "reverbDecay",    "flangerDepth"},  // The Cure
-        {"lofi",         "reverbMix",      "freezeDecay"},   // Lil Peep
-        {"drive",        "wahDepth",       "bass"},          // Iggy Pop
-        {"reverbMix",    "reverbTone",     "treble"},        // Surf Clean
-        {"tremDepth",    "freezeShimmer",  "flangerDepth"},  // Night Waves
-        {"tremSpeed",    "tremDepth",      "reverbTone"},    // Dick Dale
-        {"drive",        "vibeDepth",      "reverbMix"},     // Pixies
-        {"flangerDepth", "drive",          "treble"},        // Joy Division
-        {"drive",        "slideAmount",    "bass"},          // Jack White
-        {"freezeShimmer","vibeDepth",      "tremDepth"},     // Haunted Motel
-        {"drive",        "wahDepth",       "vibeDepth"},     // Jimi Hendrix
-        {"treble",       "bass",           "lofi"},          // Nile Rodgers
+        {"reverbMix",    "reverbDecay",    "flangerDepth"},
+        {"lofi",         "reverbMix",      "freezeDecay"},
+        {"drive",        "wahDepth",       "bass"},
+        {"reverbMix",    "reverbTone",     "treble"},
+        {"tremDepth",    "freezeShimmer",  "flangerDepth"},
+        {"tremSpeed",    "tremDepth",      "reverbTone"},
+        {"drive",        "vibeDepth",      "reverbMix"},
+        {"flangerDepth", "drive",          "treble"},
+        {"drive",        "slideAmount",    "bass"},
+        {"freezeShimmer","vibeDepth",      "tremDepth"},
+        {"drive",        "wahDepth",       "vibeDepth"},
+        {"treble",       "bass",           "lofi"},
     };
 
     const char* kids[]={"reverbMix","reverbDecay","reverbTone","tremSpeed","tremDepth",
@@ -731,7 +793,7 @@ void GhostSurfEditor::paint(Graphics& g)
 {
     const int W=getWidth(),H=getHeight();
 
-    // Background
+    // Background gradient
     ColourGradient bg(Colour(0xFF040810),0,0,Colour(0xFF060F18),0,H,false);
     g.setGradientFill(bg); g.fillAll();
 
@@ -741,7 +803,7 @@ void GhostSurfEditor::paint(Graphics& g)
         float wy=H*(0.20f+i*0.25f),amp=11.f+i*4.f;
         Path w; w.startNewSubPath(0,wy);
         for(int xi=0;xi<=W;xi+=4){
-            float fx=(float)xi/W-0.5f; // -0.5 to +0.5
+            float fx=(float)xi/W-0.5f;
             float sym=std::sin(std::abs(fx)*MathConstants<float>::pi*6.f+t+i*1.1f)*std::cos(fx*MathConstants<float>::pi);
             w.lineTo((float)xi,wy+sym*amp);
         }
@@ -749,19 +811,20 @@ void GhostSurfEditor::paint(Graphics& g)
         g.setColour(Colour(0xFF0A2040).withAlpha(0.04f+i*0.015f)); g.fillPath(w);
     }
 
-    // Header
+    // ── Header ───────────────────────────────────────────────────────────────
     g.setColour(Colour(0xCC030C16)); g.fillRect(0,0,W,66);
-    // Symmetric neon divider line
+    // Symmetric neon divider
     ColourGradient hline(C::sky.withAlpha(0.0f),0,65,C::aqua.withAlpha(0.65f),(float)W/2,65,false);
     hline.addColour(1.0,C::sky.withAlpha(0.0f));
     g.setGradientFill(hline); g.fillRect(0,64,W,2);
     g.setColour(C::sky.withAlpha(0.20f)); g.drawHorizontalLine(66,0,(float)W);
 
-    drawScratchedTitle(g,"GHOST SURF",14.f,12.f);
+    // Plugin title
+    drawScratchedTitle(g,"GHOST SURF",10.f,12.f);
 
-    // Surf Score
+    // Surf Score bar
     {
-        float barX=220.f,barY=20.f,barW=185.f,barH=11.f;
+        float barX=212.f,barY=20.f,barW=168.f,barH=11.f;
         g.setColour(Colour(0xFF081C2E)); g.fillRoundedRectangle(barX,barY,barW,barH,4.f);
         float fill=jlimit(0.f,1.f,scoreAnim/100.f);
         Colour fc=fill>0.80f?Colour(0xFFFFDD00):fill>0.50f?C::aqua:C::sky;
@@ -770,43 +833,48 @@ void GhostSurfEditor::paint(Graphics& g)
         g.setColour(C::sky.withAlpha(0.28f)); g.drawRoundedRectangle(barX,barY,barW,barH,4.f,1.f);
         g.setColour(C::ice.withAlpha(0.55f)); g.setFont(Font("Arial",7.5f,Font::bold));
         g.drawText("SURF SCORE",(int)barX,(int)(barY+barH+2),(int)barW,10,Justification::centredLeft);
+        // Combo badge
         if(comboFlash>1){
-            float bx=barX+barW+6,by=barY-1;
+            float bx=barX+barW+5,by=barY-1;
             Colour cc=comboFlash>=6?Colour(0xFFFFDD00):comboFlash>=3?C::aqua:C::sky;
-            g.setColour(cc.withAlpha(0.22f)); g.fillRoundedRectangle(bx,by,38,16,5.f);
-            g.setColour(cc); g.drawRoundedRectangle(bx,by,38,16,5.f,1.f);
+            g.setColour(cc.withAlpha(0.22f)); g.fillRoundedRectangle(bx,by,36,15,5.f);
+            g.setColour(cc); g.drawRoundedRectangle(bx,by,36,15,5.f,1.f);
             g.setFont(Font("Arial",8.f,Font::bold));
-            g.drawText("x"+String(comboFlash),(int)bx,(int)by,38,16,Justification::centred);
+            g.drawText("x"+String(comboFlash),(int)bx,(int)by,36,15,Justification::centred);
         }
     }
 
-    // Live color legend
-    for(int r=0;r<3;++r){
-        g.setColour(liveColours[r].withAlpha(0.88f));
-        g.fillEllipse((float)(W-148+(r)*40),22.f,8.f,8.f);
+    // ── MGB Logo ─────────────────────────────────────────────────────────────
+    auto logoImg=ImageCache::getFromMemory(BinaryData::logo_png,BinaryData::logo_pngSize);
+    if(logoImg.isValid()){
+        // Subtle halo behind logo
+        g.setColour(C::sky.withAlpha(0.06f));
+        g.fillEllipse(604,1,62,62);
+        g.drawImageWithin(logoImg,606,2,58,62,
+            RectanglePlacement::centred|RectanglePlacement::onlyReduceInSize);
+        // Thin neon ring
+        g.setColour(C::sky.withAlpha(0.28f));
+        g.drawEllipse(606,2,58,62,1.f);
     }
-    g.setColour(C::dim.withAlpha(0.55f)); g.setFont(Font("Arial",7.f,Font::plain));
-    g.drawText("live",W-50,20,38,12,Justification::centredLeft);
 
     // Panels
-    drawPanel(g,{8,  67,215,316},"SPRING REVERB",    C::sky);
-    drawPanel(g,{231,67,162,316},"TREMOLO + FLANGER", C::aqua);
-    drawPanel(g,{401,67,234,316},"EFFETS + WAH",      C::cobalt);
-    drawPanel(g,{643,67, 110,155},"SLIDE",            C::mint);
-    drawPanel(g,{643,230,110,160},"UNI-VIBE",         C::violet);
-    drawPanel(g,{643,398,110,251},"NIVEAU",           C::sky.withAlpha(0.7f));
-    drawPanel(g,{8,  398,627,251},"SPECTER / FREEZE", C::aqua);
+    drawPanel(g,{8,   67,215,316},"SPRING REVERB",    C::sky);
+    drawPanel(g,{231, 67,162,316},"TREMOLO + FLANGER", C::aqua);
+    drawPanel(g,{401, 67,234,316},"EFFETS + WAH",      C::cobalt);
+    drawPanel(g,{643, 67, 110,155},"SLIDE",            C::mint);
+    drawPanel(g,{643,230, 110,160},"UNI-VIBE",         C::violet);
+    drawPanel(g,{643,398, 110,251},"NIVEAU",           C::sky.withAlpha(0.7f));
+    drawPanel(g,{8,  398, 627,251},"SPECTER / FREEZE", C::aqua);
 
-    // Sub-section labels (ASCII only — no encoding problems)
-    g.setFont(Font("Arial",7.5f,Font::bold));
-    g.setColour(C::aqua.withAlpha(0.40f));
-    g.drawText("-- FLANGER --",235,248,154,12,Justification::centred);
-    g.setColour(C::cobalt.withAlpha(0.40f));
-    g.drawText("-- WAH-WAH --",405,248,226,12,Justification::centred);
-    g.setColour(C::mint.withAlpha(0.40f));
-    g.drawText("-- AUTO-PAN --",405,315,226,12,Justification::centred);
+    // Sub-section dividers (label pill + line)
+    // FLANGER divider inside TREMOLO+FLANGER panel
+    drawDivider(g, 233, 240, 158, "FLANGER", C::aqua);
+    // WAH divider inside EFFETS+WAH panel
+    drawDivider(g, 403, 240, 210, "WAH-WAH", C::cobalt);
+    // AUTO-PAN divider inside EFFETS+WAH panel
+    drawDivider(g, 403, 310, 210, "AUTO-PAN", C::mint);
 
-    // Uni-Vibe spinning wheel
+    // Uni-Vibe spinning wheel indicator
     {
         float spd=proc.getAPVTS().getRawParameterValue("vibeSpeed")->load();
         float dep=proc.getAPVTS().getRawParameterValue("vibeDepth")->load();
@@ -826,71 +894,85 @@ void GhostSurfEditor::paint(Graphics& g)
 // ── resized ───────────────────────────────────────────────────────────────────
 void GhostSurfEditor::resized()
 {
-    presetBox.setBounds(448,19,202,28);
-    tremSyncBtn.setBounds(240,206,58,20);
-    tremDivBox .setBounds(303,206,80,20);
-    // VIBRATO: petit bouton compact dans le panel UNI-VIBE, sous le knob DEPTH
+    // Header controls
+    presetBox.setBounds(428, 18, 172, 28);
+    websiteBtn.setBounds(670, 19, 84, 26);
+
+    // Tremolo controls
+    tremSyncBtn.setBounds(240,206,56,20);
+    tremDivBox .setBounds(300,206,80,20);
+
+    // VIBRATO button (within UNI-VIBE panel, below vibeDepth label)
     vibeModeBtn.setBounds(653,370,104,18);
 
-    // LED buttons — 16x16, top-right corner of each panel
-    ledReverb .setBounds(213,71,16,16);
-    ledTremolo.setBounds(384,71,16,16);
-    ledFlanger.setBounds(384,251,16,16);
-    ledWah    .setBounds(626,251,16,16);
-    ledSlide  .setBounds(744,71,16,16);
-    ledVibe   .setBounds(744,234,16,16);
-    ledSpecter.setBounds(626,402,16,16);
-    ledAutoPan.setBounds(626,318,16,16);
+    // ── LED bypass buttons (18x18) ───────────────────────────────────────────
+    // Each placed at top-right corner INSIDE its panel border
+    // SPRING REVERB panel right=223 → LED at 203,71
+    ledReverb .setBounds(203, 71,18,18);
+    // TREMOLO+FLANGER panel right=393 → LED at 373,71
+    ledTremolo.setBounds(373, 71,18,18);
+    // FLANGER sub-section LED, right of divider, y=242
+    ledFlanger.setBounds(373,242,18,18);
+    // EFFETS+WAH panel, WAH sub-section, y=242
+    ledWah    .setBounds(613,242,18,18);
+    // SLIDE panel right=753 → LED at 733,71
+    ledSlide  .setBounds(733, 71,18,18);
+    // UNI-VIBE panel, top-right, y=234
+    ledVibe   .setBounds(733,234,18,18);
+    // SPECTER/FREEZE panel right=635 → LED at 615,402
+    ledSpecter.setBounds(613,402,18,18);
+    // AUTO-PAN sub-section LED, y=312
+    ledAutoPan.setBounds(613,312,18,18);
 
-    const int KS=52,KY=128;
+    const int KS=52, KY=128;
 
-    // Spring Reverb knobs
-    placeKnob(reverbMix,  57,KY,KS);
-    placeKnob(reverbDecay,117,KY,KS);
-    placeKnob(reverbTone, 177,KY,KS);
+    // ── SPRING REVERB knobs (panel x=8..223) ─────────────────────────────────
+    placeKnob(reverbMix,   57, KY, KS);
+    placeKnob(reverbDecay, 117,KY, KS);
+    placeKnob(reverbTone,  177,KY, KS);
     waveDisplay.setBounds(14,200,206,175);
 
-    // Tremolo knobs
-    placeKnob(tremSpeed,272,KY,KS);
-    placeKnob(tremDepth,352,KY,KS);
+    // ── TREMOLO knobs (panel x=231..393) ─────────────────────────────────────
+    placeKnob(tremSpeed, 272,KY,KS);
+    placeKnob(tremDepth, 352,KY,KS);
 
-    // Flanger knobs (sub-section below tremolo)
-    placeKnob(flangerRate,    258,272,44);
-    placeKnob(flangerDepth,   312,272,44);
-    placeKnob(flangerFeedback,366,272,44);
+    // ── FLANGER knobs — below divider at y=240, sz=44
+    // centers at 258,312,366 → all within 231..393
+    placeKnob(flangerRate,    258,278,44);
+    placeKnob(flangerDepth,   312,278,44);
+    placeKnob(flangerFeedback,366,278,44);
 
-    // Effets knobs
-    placeKnob(drive,  449,KY,KS);
-    placeKnob(lofi,   509,KY,KS);
-    placeKnob(bass,   565,KY,KS);
-    placeKnob(treble, 619,KY,KS);
+    // ── EFFETS knobs (panel x=401..635), evenly spaced, sz=52 ────────────────
+    // centers: 430, 489, 548, 607 → all within 401+26=427..635-26=609 ✓
+    placeKnob(drive,  430,KY,KS);
+    placeKnob(lofi,   489,KY,KS);
+    placeKnob(bass,   548,KY,KS);
+    placeKnob(treble, 607,KY,KS);
 
-    // Wah-Wah knobs (sub-section below effets)
-    placeKnob(wahDepth,449,274,44);
-    placeKnob(wahRate, 509,274,44);
+    // ── WAH knobs — below WAH divider at y=240, sz=44 ────────────────────────
+    placeKnob(wahDepth, 449,278,44);
+    placeKnob(wahRate,  509,278,44);
 
-    // Auto-Pan knob (sub-section below wah)
-    placeKnob(autoPanRate,518,340,44);
+    // ── AUTO-PAN knob — below AUTO-PAN divider at y=310, sz=44 ──────────────
+    placeKnob(autoPanRate, 510,348,44);
 
-    // Slide
-    placeKnob(slideAmount,698,105,KS);
-    placeKnob(slideSpeed, 698,178,KS);
+    // ── SLIDE knobs (panel x=643..753, cy within 67..222) ────────────────────
+    placeKnob(slideAmount, 698,108,KS);
+    placeKnob(slideSpeed,  698,178,KS);
 
-    // Uni-Vibe — speed + depth, VIBRATO button sous depth sans overlap
-    placeKnob(vibeSpeed,698,258,KS);
-    placeKnob(vibeDepth,698,325,KS);
+    // ── UNI-VIBE knobs (panel x=643..753, cy within 230..390) ────────────────
+    placeKnob(vibeSpeed, 698,262,KS);
+    placeKnob(vibeDepth, 698,328,KS);
 
-    // Specter Pad
+    // ── SPECTER Pad + FREEZE ─────────────────────────────────────────────────
     specterPad.setBounds(14,416,415,225);
-
-    // Freeze
     freezePanel.setBounds(436,416,112,225);
 
-    // Freeze knobs
-    placeKnob(freezeGrain,  565,435,44);
-    placeKnob(freezeShimmer,565,502,44);
-    placeKnob(freezeDecay,  565,569,44);
+    // ── FREEZE knobs (right portion of SPECTER panel, within x=553..629) ─────
+    placeKnob(freezeGrain,   562,438,44);
+    placeKnob(freezeShimmer, 562,505,44);
+    placeKnob(freezeDecay,   562,572,44);
 
-    // VU Meter — aligné avec le panel NIVEAU
+    // ── VU Meter (NIVEAU panel, x=643..753) ──────────────────────────────────
     vuMeter.setBounds(649,412,104,230);
 }

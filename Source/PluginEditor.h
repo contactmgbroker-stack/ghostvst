@@ -11,6 +11,7 @@ public:
                           float pos,float start,float end,juce::Slider&) override;
     void drawComboBox(juce::Graphics&,int w,int h,bool,int bx,int by,int bw,int bh,juce::ComboBox&) override;
     void drawButtonBackground(juce::Graphics&,juce::Button&,const juce::Colour&,bool hi,bool) override;
+    void drawButtonText(juce::Graphics&,juce::TextButton&,bool hi,bool) override;
     // Hide default tick/checkbox for LED buttons
     void drawTickBox(juce::Graphics&,juce::Component&,float x,float y,float w,float h,
                      bool,bool,bool,bool) override;
@@ -133,6 +134,9 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>
         ledReverbA, ledTremoloA, ledFlangerA, ledWahA,
         ledSlideA, ledVibeA, ledSpecterA, ledAutoPanA;
+
+    // ── Website button ───────────────────────────────────────────────────────
+    juce::TextButton websiteBtn;
 
     // ── Subcomponents ────────────────────────────────────────────────────────
     VUMeter         vuMeter;

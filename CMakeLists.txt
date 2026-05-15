@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # git clone https://github.com/juce-framework/JUCE.git
 add_subdirectory(JUCE)
 
-juce_add_binary_data(GhostSurfData SOURCES Assets/cigare.png)
+juce_add_binary_data(GhostSurfData SOURCES Assets/cigare.png Assets/logo.png)
 
 juce_add_plugin(GhostSurf
     COMPANY_NAME            "WipeOut Audio"
@@ -16,7 +16,7 @@ juce_add_plugin(GhostSurf
     NEEDS_MIDI_INPUT        FALSE
     NEEDS_MIDI_OUTPUT       FALSE
     IS_MIDI_EFFECT          FALSE
-    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+    EDITOR_WANTS_KEYBOARD_FOCUS TRUE
     COPY_PLUGIN_AFTER_BUILD FALSE
     PLUGIN_MANUFACTURER_CODE Wipo
     PLUGIN_CODE             Gsrf
