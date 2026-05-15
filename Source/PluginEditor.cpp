@@ -156,6 +156,20 @@ void OceanLookAndFeel::drawButtonBackground(Graphics& g,Button& btn,const Colour
     }
 }
 
+void OceanLookAndFeel::drawTickBox(Graphics& g,Component& comp,
+    float x,float y,float w,float h,bool ticked,bool,bool,bool)
+{
+    // For LED-sized buttons suppress the checkbox entirely — LED drawn in drawButtonBackground
+    if(w<=20.f && h<=20.f) return;
+    // For larger toggles (SYNC, VIBRATO) draw a minimal rounded rect tick
+    Rectangle<float> r(x,y,w,h);
+    g.setColour(ticked ? C::sky.withAlpha(0.9f) : Colour(0xFF1A3050));
+    g.fillRoundedRectangle(r,3.f);
+    g.setColour(C::sky.withAlpha(0.55f)); g.drawRoundedRectangle(r,3.f,1.f);
+    if(ticked){ g.setColour(C::ice); g.setFont(10.f);
+                g.drawText("✓",r.toNearestInt(),Justification::centred); }
+}
+
 Font OceanLookAndFeel::getLabelFont(Label&) { return Font("Arial",9.5f,Font::bold); }
 void OceanLookAndFeel::drawLabel(Graphics& g,Label& l) {
     g.setColour(l.findColour(Label::textColourId));
@@ -779,9 +793,9 @@ void GhostSurfEditor::paint(Graphics& g)
     drawPanel(g,{231,67,162,316},"TREMOLO + FLANGER", C::aqua);
     drawPanel(g,{401,67,234,316},"EFFETS + WAH",      C::cobalt);
     drawPanel(g,{643,67, 110,155},"SLIDE",            C::mint);
-    drawPanel(g,{643,230,110,153},"UNI-VIBE",         C::violet);
-    drawPanel(g,{643,391,110,258},"NIVEAU",           C::sky.withAlpha(0.7f));
-    drawPanel(g,{8,  391,627,258},"SPECTER / FREEZE", C::aqua);
+    drawPanel(g,{643,230,110,160},"UNI-VIBE",         C::violet);
+    drawPanel(g,{643,398,110,251},"NIVEAU",           C::sky.withAlpha(0.7f));
+    drawPanel(g,{8,  398,627,251},"SPECTER / FREEZE", C::aqua);
 
     // Sub-section labels (ASCII only — no encoding problems)
     g.setFont(Font("Arial",7.5f,Font::bold));
@@ -815,8 +829,8 @@ void GhostSurfEditor::resized()
     presetBox.setBounds(448,19,202,28);
     tremSyncBtn.setBounds(240,206,58,20);
     tremDivBox .setBounds(303,206,80,20);
-    // VIBRATO button — placed ABOVE vibeDepth knob (no overlap)
-    vibeModeBtn.setBounds(650,354,106,20);
+    // VIBRATO: petit bouton compact dans le panel UNI-VIBE, sous le knob DEPTH
+    vibeModeBtn.setBounds(653,370,104,18);
 
     // LED buttons — 16x16, top-right corner of each panel
     ledReverb .setBounds(213,71,16,16);
@@ -825,7 +839,7 @@ void GhostSurfEditor::resized()
     ledWah    .setBounds(626,251,16,16);
     ledSlide  .setBounds(744,71,16,16);
     ledVibe   .setBounds(744,234,16,16);
-    ledSpecter.setBounds(626,395,16,16);
+    ledSpecter.setBounds(626,402,16,16);
     ledAutoPan.setBounds(626,318,16,16);
 
     const int KS=52,KY=128;
@@ -862,21 +876,21 @@ void GhostSurfEditor::resized()
     placeKnob(slideAmount,698,105,KS);
     placeKnob(slideSpeed, 698,178,KS);
 
-    // Uni-Vibe — VIBRATO btn at 354, vibeDepth at cy=338 (no overlap)
-    placeKnob(vibeSpeed,698,262,KS);
-    placeKnob(vibeDepth,698,335,KS);
+    // Uni-Vibe — speed + depth, VIBRATO button sous depth sans overlap
+    placeKnob(vibeSpeed,698,258,KS);
+    placeKnob(vibeDepth,698,325,KS);
 
     // Specter Pad
-    specterPad.setBounds(14,409,415,230);
+    specterPad.setBounds(14,416,415,225);
 
     // Freeze
-    freezePanel.setBounds(436,409,112,230);
+    freezePanel.setBounds(436,416,112,225);
 
     // Freeze knobs
-    placeKnob(freezeGrain,  565,438,44);
-    placeKnob(freezeShimmer,565,508,44);
-    placeKnob(freezeDecay,  565,578,44);
+    placeKnob(freezeGrain,  565,435,44);
+    placeKnob(freezeShimmer,565,502,44);
+    placeKnob(freezeDecay,  565,569,44);
 
-    // VU Meter
-    vuMeter.setBounds(649,405,104,237);
+    // VU Meter — aligné avec le panel NIVEAU
+    vuMeter.setBounds(649,412,104,230);
 }
