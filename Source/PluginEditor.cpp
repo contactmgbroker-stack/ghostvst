@@ -268,23 +268,23 @@ static void drawPanel(Graphics& g,Rectangle<int> r,const char* title,Colour ac)
 // ── Sub-section divider ───────────────────────────────────────────────────────
 static void drawDivider(Graphics& g,int x,int y,int w,const char* label,Colour ac)
 {
-    // Ligne horizontale pointillée
-    g.setColour(ac.withAlpha(0.20f));
-    g.drawHorizontalLine(y+8, (float)x+6, (float)(x+w-6));
-    // Pill centrale
-    int lw=66;
+    // Ligne horizontale
+    g.setColour(ac.withAlpha(0.22f));
+    g.drawHorizontalLine(y+9, (float)x+6, (float)(x+w-6));
+    // Pill centrale — assez large pour tout texte
+    int lw=80;
     int lx=x+(w-lw)/2;
-    g.setColour(ac.withAlpha(0.14f));
-    g.fillRoundedRectangle((float)lx,(float)y,lw,16.f,5.f);
-    g.setColour(ac.withAlpha(0.60f));
-    g.drawRoundedRectangle((float)lx,(float)y,lw,16.f,5.f,0.9f);
+    g.setColour(ac.withAlpha(0.15f));
+    g.fillRoundedRectangle((float)lx,(float)y,lw,18.f,5.f);
+    g.setColour(ac.withAlpha(0.65f));
+    g.drawRoundedRectangle((float)lx,(float)y,lw,18.f,5.f,0.9f);
     // Ombre texte
-    g.setColour(Colour(0xFF000812).withAlpha(0.80f));
-    g.setFont(Font("Segoe Script",9.5f,Font::plain));
-    g.drawText(label,lx+1,y+1,lw,16,Justification::centred,false);
-    // Texte neon
-    g.setColour(ac.brighter(0.25f));
-    g.drawText(label,lx,y,lw,16,Justification::centred,false);
+    g.setColour(Colour(0xFF000008).withAlpha(0.90f));
+    g.setFont(Font("Arial",8.5f,Font::bold));
+    g.drawText(label,lx+1,y+1,lw,18,Justification::centred,false);
+    // Texte neon lisible
+    g.setColour(ac.brighter(0.30f));
+    g.drawText(label,lx,y,lw,18,Justification::centred,false);
 }
 
 // ── Scratched neon title ──────────────────────────────────────────────────────
@@ -951,8 +951,8 @@ void GhostSurfEditor::resized()
     tremSyncBtn.setBounds(240,172,56,20);
     tremDivBox .setBounds(300,172,80,20);
 
-    // VIBRATO button (within UNI-VIBE panel, below vibeDepth label)
-    vibeModeBtn.setBounds(653,370,104,18);
+    // VIBRATO button — dans panel UNI-VIBE (y=230..390), sous vibeDepth label
+    vibeModeBtn.setBounds(653,366,104,18);
 
     // ── LED bypass buttons (18x18) ───────────────────────────────────────────
     // SPRING REVERB panel  x=8..223    → LED a 203,73
@@ -1008,11 +1008,11 @@ void GhostSurfEditor::resized()
     // label bottom = 300+22+8+16=346 < panel bottom 383 ✓
     placeKnob(autoPanRate, 510,300,44);
 
-    // ── SLIDE (panel y=67..222, titre ~20px → contenu debut y=88) ───────────
-    // cy=115 : top=89 ✓  label bottom=163 ✓
-    // cy=168 : top=142  label bottom=216 < 222 ✓
-    placeKnob(slideAmount, 698,115,KS);
-    placeKnob(slideSpeed,  698,168,KS);
+    // ── SLIDE (panel y=67..222) ───────────────────────────────────────────────
+    // cy=122 : top=96 (sous titre panel) label bottom=170 ✓
+    // cy=174 : label bottom=222 = panel bottom, juste
+    placeKnob(slideAmount, 698,122,KS);
+    placeKnob(slideSpeed,  698,174,KS);
 
     // ── UNI-VIBE (panel x=643..753, cy within 230..390) ──────────────────────
     // cy=262: label bottom=262+26+8+16=312 ✓
