@@ -12,7 +12,6 @@ OutputBaseFilename=GhostSurf_Setup
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
-SetupIconFile=Assets\cigare.png
 UninstallDisplayName=GhostSurf VST3
 UninstallDisplayIcon={app}\Contents\x86_64-win\GhostSurf.vst3
 PrivilegesRequired=admin
