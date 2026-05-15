@@ -213,8 +213,8 @@ void OceanLookAndFeel::drawTickBox(Graphics& g,Component&,
 
 Font OceanLookAndFeel::getLabelFont(Label&)
 {
-    // "Segoe Script" donne un look griffé/ecrit a la main sur Windows
-    return Font("Segoe Script", 11.5f, Font::plain);
+    // Arial bold italic : lisible + dynamique (effet griffé vient du rendu)
+    return Font("Arial", 10.5f, Font::bold | Font::italic);
 }
 
 void OceanLookAndFeel::drawLabel(Graphics& g,Label& l)
@@ -223,14 +223,16 @@ void OceanLookAndFeel::drawLabel(Graphics& g,Label& l)
     auto txt = l.getText();
     auto col = l.findColour(Label::textColourId);
     g.setFont(getLabelFont(l));
-    // Ombre portée pour profondeur
-    g.setColour(Colour(0xFF000812).withAlpha(0.85f));
-    g.drawText(txt, b.translated(1,1), Justification::centred, false);
-    // Léger halo de couleur accent
-    g.setColour(col.withAlpha(0.22f));
+    // Ombre portée noire — donne la profondeur
+    g.setColour(Colour(0xFF000008).withAlpha(0.95f));
+    g.drawText(txt, b.translated(1,2), Justification::centred, false);
+    // Double halo couleur pour effet neon griffé
+    g.setColour(col.withAlpha(0.30f));
     g.drawText(txt, b.translated(-1,0), Justification::centred, false);
-    // Texte principal
-    g.setColour(col);
+    g.setColour(col.withAlpha(0.20f));
+    g.drawText(txt, b.translated(0,-1), Justification::centred, false);
+    // Texte principal vif
+    g.setColour(col.brighter(0.15f));
     g.drawText(txt, b, Justification::centred, false);
 }
 
@@ -617,8 +619,8 @@ void GhostSurfEditor::buildKnob(KnobWidget& kw,const char* id,const char* lbl,Co
     kw.slider.setMouseCursor(MouseCursor::UpDownLeftRightResizeCursor);
     addAndMakeVisible(kw.slider);
     kw.label.setText(lbl,dontSendNotification);
-    kw.label.setFont(Font("Segoe Script",11.5f,Font::plain));
-    kw.label.setColour(Label::textColourId,ac.withAlpha(0.92f));
+    kw.label.setFont(Font("Arial",10.5f,Font::bold|Font::italic));
+    kw.label.setColour(Label::textColourId,ac.withAlpha(0.95f));
     kw.label.setJustificationType(Justification::centred);
     addAndMakeVisible(kw.label);
     kw.attach=std::make_unique<AudioProcessorValueTreeState::SliderAttachment>(proc.getAPVTS(),id,kw.slider);
@@ -880,24 +882,28 @@ void GhostSurfEditor::paint(Graphics& g)
     }
 
     // ── MGB Logo ─────────────────────────────────────────────────────────────
-    // ImageFileFormat::loadFrom est plus robuste pour les gros PNG
     auto logoImg = ImageFileFormat::loadFrom(BinaryData::logo_png,
                                              (size_t)BinaryData::logo_pngSize);
-    if(logoImg.isValid()){
-        // Halo circulaire derrière le logo
-        ColourGradient halo(C::sky.withAlpha(0.10f),635,33,C::sky.withAlpha(0.f),666,33,true);
-        g.setGradientFill(halo); g.fillEllipse(604,1,62,62);
-        // Logo mis à l'échelle dans la zone 58x62
-        g.drawImage(logoImg, 606, 2, 58, 62,
-                    0, 0, logoImg.getWidth(), logoImg.getHeight());
-        // Anneau neon fin
-        g.setColour(C::sky.withAlpha(0.32f));
-        g.drawRoundedRectangle(605.f,1.f,60.f,63.f,6.f,1.f);
-    } else {
-        // Fallback si image invalide : texte MGB
-        g.setFont(Font("Impact",18.f,Font::plain));
-        g.setColour(C::sky.withAlpha(0.85f));
-        g.drawText("MGB",606,2,58,62,Justification::centred,false);
+    {
+        // Fond clair arrondi pour que le logo ressorte sur fond sombre
+        ColourGradient logoBg(Colour(0xFF1C3A5E),606,2,Colour(0xFF0D1F35),606,64,false);
+        g.setGradientFill(logoBg);
+        g.fillRoundedRectangle(604.f,1.f,62.f,64.f,8.f);
+        // Bordure neon
+        g.setColour(C::sky.withAlpha(0.55f));
+        g.drawRoundedRectangle(604.f,1.f,62.f,64.f,8.f,1.5f);
+
+        if(logoImg.isValid()){
+            // Dessiner le logo a pleine luminosite
+            g.setOpacity(1.0f);
+            g.drawImage(logoImg, 606, 3, 58, 60,
+                        0, 0, logoImg.getWidth(), logoImg.getHeight());
+        } else {
+            // Fallback texte si image invalide
+            g.setFont(Font("Impact",16.f,Font::plain));
+            g.setColour(C::sky);
+            g.drawText("MGB",604,1,62,64,Justification::centred,false);
+        }
     }
 
     // Panels
@@ -911,11 +917,11 @@ void GhostSurfEditor::paint(Graphics& g)
 
     // Sub-section dividers (label pill + line)
     // FLANGER divider inside TREMOLO+FLANGER panel
-    drawDivider(g, 233, 240, 158, "FLANGER", C::aqua);
-    // WAH divider inside EFFETS+WAH panel
-    drawDivider(g, 403, 240, 210, "WAH-WAH", C::cobalt);
+    drawDivider(g, 233, 195, 158, "FLANGER", C::aqua);
+    // WAH divider inside EFFETS+WAH panel (compact layout)
+    drawDivider(g, 403, 170, 208, "WAH-WAH", C::cobalt);
     // AUTO-PAN divider inside EFFETS+WAH panel
-    drawDivider(g, 403, 310, 210, "AUTO-PAN", C::mint);
+    drawDivider(g, 403, 258, 208, "AUTO-PAN", C::mint);
 
     // Uni-Vibe spinning wheel indicator
     {
@@ -941,31 +947,30 @@ void GhostSurfEditor::resized()
     presetBox.setBounds(428, 18, 172, 28);
     websiteBtn.setBounds(670, 19, 84, 26);
 
-    // Tremolo controls
-    tremSyncBtn.setBounds(240,206,56,20);
-    tremDivBox .setBounds(300,206,80,20);
+    // Tremolo SYNC + division (sous labels tremolo, avant divider FLANGER y=195)
+    tremSyncBtn.setBounds(240,172,56,20);
+    tremDivBox .setBounds(300,172,80,20);
 
     // VIBRATO button (within UNI-VIBE panel, below vibeDepth label)
     vibeModeBtn.setBounds(653,370,104,18);
 
     // ── LED bypass buttons (18x18) ───────────────────────────────────────────
-    // Each placed at top-right corner INSIDE its panel border
-    // SPRING REVERB panel right=223 → LED at 203,71
-    ledReverb .setBounds(203, 71,18,18);
-    // TREMOLO+FLANGER panel right=393 → LED at 373,71
-    ledTremolo.setBounds(373, 71,18,18);
-    // FLANGER sub-section LED, right of divider, y=242
-    ledFlanger.setBounds(373,242,18,18);
-    // EFFETS+WAH panel, WAH sub-section, y=242
-    ledWah    .setBounds(613,242,18,18);
-    // SLIDE panel right=753 → LED at 733,71
-    ledSlide  .setBounds(733, 71,18,18);
-    // UNI-VIBE panel, top-right, y=234
-    ledVibe   .setBounds(733,234,18,18);
-    // SPECTER/FREEZE panel right=635 → LED at 615,402
-    ledSpecter.setBounds(613,402,18,18);
-    // AUTO-PAN sub-section LED, y=312
-    ledAutoPan.setBounds(613,312,18,18);
+    // SPRING REVERB panel  x=8..223    → LED a 203,73
+    ledReverb .setBounds(203, 73, 18, 18);
+    // TREMOLO+FLANGER panel x=231..393 → LED a 373,73
+    ledTremolo.setBounds(373, 73, 18, 18);
+    // FLANGER sub-section, aligne sur divider y=195
+    ledFlanger.setBounds(373,196, 18, 18);
+    // EFFETS+WAH, WAH sub-section, divider y=170
+    ledWah    .setBounds(611,171, 18, 18);
+    // SLIDE panel x=643..753            → LED a 733,73
+    ledSlide  .setBounds(733, 73, 18, 18);
+    // UNI-VIBE panel y=230              → LED a 733,234
+    ledVibe   .setBounds(733,234, 18, 18);
+    // SPECTER/FREEZE panel right=635    → LED a 611,404
+    ledSpecter.setBounds(611,404, 18, 18);
+    // AUTO-PAN sub-section, divider y=258
+    ledAutoPan.setBounds(611,259, 18, 18);
 
     const int KS=52, KY=128;
 
@@ -981,33 +986,33 @@ void GhostSurfEditor::resized()
     placeKnob(tremSpeed, 272,KY,KS);
     placeKnob(tremDepth, 352,KY,KS);
 
-    // ── FLANGER knobs — sz=44, cx-30 à cx+30 ────────────────────────────────
-    // cx=261: 231..291 ✓  cx=312: 282..342 ✓  cx=363: 333..393 ✓ (edge)
-    placeKnob(flangerRate,    261,278,44);
-    placeKnob(flangerDepth,   312,278,44);
-    placeKnob(flangerFeedback,363,278,44);
+    // ── FLANGER knobs — sous divider y=195, sz=44 ───────────────────────────
+    // cy=228: top=206 > 211(div bottom) ✓  label bottom=228+22+8+16=274 < 383 ✓
+    placeKnob(flangerRate,    261,228,44);
+    placeKnob(flangerDepth,   312,228,44);
+    placeKnob(flangerFeedback,363,228,44);
 
-    // ── EFFETS (panel x=401..635), label 60px → cx in [431..605] ────────────
-    // cx=432: 402..462 ✓  cx=490: 460..520 ✓  cx=548: 518..578 ✓  cx=605: 575..635 ✓
-    placeKnob(drive,  432,KY,KS);
-    placeKnob(lofi,   490,KY,KS);
-    placeKnob(bass,   548,KY,KS);
-    placeKnob(treble, 605,KY,KS);
+    // ── EFFETS+WAH : layout compact pour eviter tout chevauchement ───────────
+    // EFFETS cy=113 : knob 87..139, label bottom=113+26+8+16=163
+    placeKnob(drive,  432,113,KS);
+    placeKnob(lofi,   490,113,KS);
+    placeKnob(bass,   548,113,KS);
+    placeKnob(treble, 605,113,KS);
 
-    // ── WAH knobs — sz=44, label 60px ────────────────────────────────────────
-    // cx=449: 419..479 ✓  cx=509: 479..539 ✓
-    placeKnob(wahDepth, 449,278,44);
-    placeKnob(wahRate,  509,278,44);
+    // WAH divider a y=170 → knobs cy=210 : top=188 > 186(div bottom) ✓
+    // label bottom = 210+22+8+16=256 < div AUTO-PAN y=258 ✓
+    placeKnob(wahDepth, 449,210,44);
+    placeKnob(wahRate,  509,210,44);
 
-    // ── AUTO-PAN — sz=44, label bottom=cy+22+8+16=cy+46 ≤ panel bottom 383 ──
-    // cy=336: label bottom=382 ≤ 383 ✓
-    placeKnob(autoPanRate, 510,336,44);
+    // AUTO-PAN divider a y=258 → knob cy=300 : top=278 > 274(div bottom) ✓
+    // label bottom = 300+22+8+16=346 < panel bottom 383 ✓
+    placeKnob(autoPanRate, 510,300,44);
 
-    // ── SLIDE (panel x=643..753, cy within 67..222) ───────────────────────────
-    // cy=108: label bottom=108+26+8+16=158 ✓
-    // cy=170: label bottom=170+26+8+16=220 ≤ 222 ✓
-    placeKnob(slideAmount, 698,108,KS);
-    placeKnob(slideSpeed,  698,170,KS);
+    // ── SLIDE (panel y=67..222, titre ~20px → contenu debut y=88) ───────────
+    // cy=115 : top=89 ✓  label bottom=163 ✓
+    // cy=168 : top=142  label bottom=216 < 222 ✓
+    placeKnob(slideAmount, 698,115,KS);
+    placeKnob(slideSpeed,  698,168,KS);
 
     // ── UNI-VIBE (panel x=643..753, cy within 230..390) ──────────────────────
     // cy=262: label bottom=262+26+8+16=312 ✓
